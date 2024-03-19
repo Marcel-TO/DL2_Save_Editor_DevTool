@@ -141,7 +141,6 @@ hex-showcase --path "C://User/Documents/SaveFile.sav"
 hex-showcase --path "C://User/Documents/SaveFile.sav" --from 119556 --to 119560 
 ```
 > Demonstrates how to view specific byte sections
->
-> ## Command Prompts
+
 ### Clear | `clear`
 This command removes previous prompts and clears your terminal.
