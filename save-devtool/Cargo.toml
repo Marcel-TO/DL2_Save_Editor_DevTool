@@ -12,3 +12,4 @@ log = "0.4.20"
 regex = "1.10.2"
 dotenv = "0.15.0"
 flate2 = "1.0.28"
+term = "0.7.0" # Used for coloring the terminal: https://docs.rs/term/latest/term/ https://mmstick.gitbooks.io/rust-programming-phoronix-reader-how-to/content/chapter11.html
