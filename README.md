@@ -121,7 +121,6 @@ show-ids -f wpn_15hs_v_gameover_Artifact
 ```
 > Demonstrates if the `wpn_15hs_v_gameover_Artifact` is insde the IDs folder.
 
-## Command Prompts
 ### Hex Showcase | `hex-showcase`
 
 | Long Arg | Short Arg | Description | Required? | Type |
