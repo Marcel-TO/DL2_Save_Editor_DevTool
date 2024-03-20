@@ -16,7 +16,7 @@ use flate2::Compression;
 
 
 // Import all struct datas.
-use crate::struct_data::{
+use crate::save_logic::struct_data::{
     SaveFile, 
     Skills, 
     SkillItem,
