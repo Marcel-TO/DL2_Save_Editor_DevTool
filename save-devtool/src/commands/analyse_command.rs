@@ -1,9 +1,8 @@
 use serde::{Serialize, Deserialize};
-use crate::arguments::Argument;
-
-pub trait CommandFunctions {
-    fn log_help_documentation(&self);
-}
+use crate::commands::arguments::Argument;
+use crate::commands::command_functions::CommandFunctions;
+use crate::logger::{ConsoleLogger, LoggerFunctions};
+use term;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AnalyseSaveCommand {
@@ -15,26 +14,36 @@ pub struct AnalyseSaveCommand {
 
 impl CommandFunctions for AnalyseSaveCommand {
     fn log_help_documentation(&self) {
-        let mut terminal = term::stdout().unwrap();
-        terminal.attr(term::Attr::Bold).unwrap();
-        println!("Name: {:?} - {:?}", self.name, self.command);
-        terminal.reset().unwrap();
-        println!("Description: {}", self.description);
-        println!("");
-
-        println!("Arguments: ");
-        println!(
+        let logger = ConsoleLogger::new();
+        logger.log_message(&format!("Name: {:?} - {:?}", self.name, self.command), 
+            vec![
+                term::Attr::ForegroundColor(term::color::GREEN), 
+                term::Attr::Bold
+            ]);
+            logger.log_message(&format!("Description: {}", self.description), Vec::new());
+            
+        logger.log_break();
+        logger.log_message("Arguments:", vec![term::Attr::Bold]);
+        logger.log_message(&format!(
             "{0: <10} | {1: <10} | {2: <10} | {3: <10}",
             "Long Arg", "Short Args", "Type", "Description"
-        );
+        ), Vec::new());
         for arg in &self.arguments {
             if arg.is_required {
-                terminal.fg(term::color::BRIGHT_CYAN).unwrap();
+                logger.log_message(
+                    &format!("{0: <10} | {1: <10} | {2: <10} | {3: <10}", arg.long_arg, arg.short_arg, arg.type_of, arg.description), 
+                    vec![term::Attr::ForegroundColor(term::color::YELLOW)]
+                );
             } else {
-                terminal.reset().unwrap();
+                logger.log_message(
+                    &format!("{0: <10} | {1: <10} | {2: <10} | {3: <10}", arg.long_arg, arg.short_arg, arg.type_of, arg.description), 
+                    Vec::new()
+                );
             }
-            println!("{0: <10} | {1: <10} | {2: <10} | {3: <10}", arg.long_arg, arg.short_arg, arg.type_of, arg.description);
+
         }
+
+        logger.log_break();
     }
 }
 
