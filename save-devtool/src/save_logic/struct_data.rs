@@ -2,7 +2,7 @@ use std::mem;
 
 use serde::{Serialize, Deserialize};
 
-use crate::save_logic::file_analizer::format_bytes_to_string;
+use crate::save_logic::file_analyser::format_bytes_to_string;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ItemTypeEnum {

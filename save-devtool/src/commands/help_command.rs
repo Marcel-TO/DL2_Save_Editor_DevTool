@@ -1,29 +1,23 @@
-//! Represents the analyse command.
+//! Represents the help command.
 //! 
-//! It uses the crate `file_analyser` to analyse a save path.
+//! Gives an example of all supported commadns and helps the user understand the devtool.
 
 use serde::{Serialize, Deserialize};
 use crate::commands::arguments::Argument;
 use crate::commands::command_functions::CommandFunctions;
 use crate::logger::{ConsoleLogger, LoggerFunctions};
+use crate::application_logic::SupportedCommands;
 use term;
 
-/// Defines the analyse command struct.
-/// 
-/// ### Parameters
-/// - `name`: The name of the command.
-/// - `command`: The command initializer.
-/// - `description`: The description of the command.
-/// - `arguments`: The list of all the arguments for the command.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AnalyseSaveCommand {
+pub struct HelpCommand {
     pub name: &'static str,
     pub command: &'static str,
     pub description: &'static str,
     pub arguments:  Vec<Argument>,
 }
 
-impl CommandFunctions for AnalyseSaveCommand {
+impl CommandFunctions for HelpCommand {
     fn log_help_documentation(&self) {
         let logger = ConsoleLogger::new();
         logger.log_message(&format!("Name: {:?} - {:?}", self.name, self.command), 
@@ -62,28 +56,27 @@ impl CommandFunctions for AnalyseSaveCommand {
     }
 }
 
-impl AnalyseSaveCommand {
+impl HelpCommand {
     pub fn new() -> Self {
-        AnalyseSaveCommand {
-            name: "Analyse Save",
-            command: "analyse-save",
-            description: "Scrapes the .sav and validates the data.",
-            arguments: vec![
-                Argument::new(
-                "--path",
-                "-p",
-                "The path to the .sav file.",
-                true,
-                "String",
-                ),
-                Argument::new(
-                    "--debug",
-                    "-d",
-                    "Indicates whether each step will be manually continued by pressing enter or not.",
-                    false,
-                    "Boolean",
-                    ),
-            ],
+        HelpCommand {
+            name: "Help",
+            command: "help",
+            description: "Gives an overview of all commands supported by the editor",
+            arguments: Vec::new()
+        }
+    }
+
+    pub fn execute_help_command(&self, args: Vec<&str>, supported: Vec<SupportedCommands>) {
+        let logger = ConsoleLogger::new();
+
+        logger.log_message(
+            "All supported commands:", 
+            vec![term::Attr::Bold]
+        );
+        logger.log_break();
+        
+        for command in supported {
+            command.execute_help_documentation();
         }
     }
 }

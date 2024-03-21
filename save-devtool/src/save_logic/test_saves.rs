@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use dotenv::dotenv;
-    use crate::save_logic::file_analizer::{load_save_file, get_contents_from_file};
+    use crate::save_logic::file_analyser::{load_save_file, get_contents_from_file};
     use std::fs;
     use std::path::Path;
 
