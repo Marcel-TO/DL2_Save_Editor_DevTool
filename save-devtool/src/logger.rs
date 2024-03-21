@@ -8,20 +8,10 @@ pub trait LoggerFunctions {
     fn log_message(&self, message: &str, attributes: Vec<term::Attr>);
     fn log_message_no_linebreak(&self, message: &str,attributes: Vec<term::Attr>);
     fn log_error(&self, message: &str);
-    fn log_break(&self) {
-        println!("");
-    }
-    fn wait_for_input(&self) {
-        let mut stdout = io::stdout();
-        stdout.write(b"Press Enter to continue...").unwrap();
-        stdout.flush().unwrap();
-        io::stdin().read(&mut [0]).unwrap();
-    }
-    fn get_user_input(&self) -> String {
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        input
-    }
+    fn log_break(&self);
+    fn wait_for_input(&self);
+    fn get_user_input(&self) -> String;
+    fn log_title_page(&self);
 }
 
 impl LoggerFunctions for ConsoleLogger {
@@ -55,6 +45,59 @@ impl LoggerFunctions for ConsoleLogger {
         print!("{:?}", message);
 
         terminal.reset().unwrap();
+    }
+
+    fn log_break(&self) {
+        println!("");
+    }
+
+    fn wait_for_input(&self) {
+        let mut stdout = io::stdout();
+        stdout.write(b"Press Enter to continue...").unwrap();
+        stdout.flush().unwrap();
+        io::stdin().read(&mut [0]).unwrap();
+    }
+
+    fn get_user_input(&self) -> String {
+        let mut stdout = io::stdout();
+        stdout.write(b"[devtool]>>>").unwrap();
+        stdout.flush().unwrap();
+    
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        input.trim().to_string()
+    }
+
+    fn log_title_page(&self) {
+        println!(
+        "
+         _____                                                              _____ 
+        ( ___ )                                                            ( ___ )
+         |   |~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|   | 
+         |   | ███████╗ █████╗ ██╗   ██╗███████╗                            |   | 
+         |   | ██╔════╝██╔══██╗██║   ██║██╔════╝                            |   | 
+         |   | ███████╗███████║██║   ██║█████╗                              |   | 
+         |   | ╚════██║██╔══██║╚██╗ ██╔╝██╔══╝                              |   | 
+         |   | ███████║██║  ██║ ╚████╔╝ ███████╗                            |   | 
+         |   | ╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚══════╝                            |   | 
+         |   | ███████╗██████╗ ██╗████████╗ ██████╗ ██████╗                 |   | 
+         |   | ██╔════╝██╔══██╗██║╚══██╔══╝██╔═══██╗██╔══██╗                |   | 
+         |   | █████╗  ██║  ██║██║   ██║   ██║   ██║██████╔╝                |   | 
+         |   | ██╔══╝  ██║  ██║██║   ██║   ██║   ██║██╔══██╗                |   | 
+         |   | ███████╗██████╔╝██║   ██║   ╚██████╔╝██║  ██║                |   | 
+         |   | ╚══════╝╚═════╝ ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝                |   | 
+         |   | ██████╗ ███████╗██╗   ██╗████████╗ ██████╗  ██████╗ ██╗      |   | 
+         |   | ██╔══██╗██╔════╝██║   ██║╚══██╔══╝██╔═══██╗██╔═══██╗██║      |   | 
+         |   | ██║  ██║█████╗  ██║   ██║   ██║   ██║   ██║██║   ██║██║      |   | 
+         |   | ██║  ██║██╔══╝  ╚██╗ ██╔╝   ██║   ██║   ██║██║   ██║██║      |   | 
+         |   | ██████╔╝███████╗ ╚████╔╝    ██║   ╚██████╔╝╚██████╔╝███████╗ |   | 
+         |   | ╚═════╝ ╚══════╝  ╚═══╝     ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝ |   | 
+         |   |  Author: Marcel McHawk                                       |   | 
+         |   |  License: MIT                                                |   | 
+         |___|~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~|___| 
+        (_____)                                                            (_____)
+        "
+        );     
     }
 }
 
