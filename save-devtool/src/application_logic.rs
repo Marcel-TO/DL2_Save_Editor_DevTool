@@ -7,6 +7,7 @@
 
 use crate::logger::{ConsoleLogger, LoggerFunctions};
 use crate::commands::*;
+use shell_words::split;
 
 use self::command_functions::CommandFunctions;
 
@@ -66,7 +67,8 @@ pub fn main() {
         // Awaits user input.
         let user_input: String = logger.get_user_input();
         // Splits the user input into arguments.
-        let args: Vec<&str> = user_input.split(' ').collect();
+        let split_result = split(&user_input).unwrap_or_else(|_| Vec::new());
+        let args: Vec<&str> = split_result.iter().map(|s| s.as_str()).collect();
     
         // Gets first argument to match with supported commands.
         if let Some(command) = args.first() {
