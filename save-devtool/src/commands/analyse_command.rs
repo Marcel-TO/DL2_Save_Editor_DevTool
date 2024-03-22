@@ -2,11 +2,15 @@
 //! 
 //! It uses the crate `file_analyser` to analyse a save path.
 
+use std::path::Path;
+use term;
 use serde::{Serialize, Deserialize};
+
 use crate::commands::arguments::Argument;
 use crate::commands::command_functions::CommandFunctions;
+use crate::commands::help_command;
 use crate::logger::{ConsoleLogger, LoggerFunctions};
-use term;
+use crate::save_logic::file_analyser::{get_contents_from_file, load_save_file, load_save_file_pc};
 
 /// Defines the analyse command struct.
 /// 
@@ -20,7 +24,9 @@ pub struct AnalyseSaveCommand {
     pub name: &'static str,
     pub command: &'static str,
     pub description: &'static str,
-    pub arguments:  Vec<Argument>,
+    pub arguments: Vec<Argument>,
+    selected_path: String,
+    debug: bool,
 }
 
 impl CommandFunctions for AnalyseSaveCommand {
@@ -58,7 +64,60 @@ impl CommandFunctions for AnalyseSaveCommand {
     }
 
     fn execute_command(&self, args: Vec<&str>) {
-        self.log_help_documentation();
+        // Initializes the logger.
+        let logger: ConsoleLogger = ConsoleLogger::new();
+
+        match args.as_slice() {
+            [a, b, rest @ ..] => {
+                match (*a, *b) {
+                    ("--path", path) => {
+                        if Path::new(&path.replace('"', "")).exists() {
+                            logger.log_message("Path is set.", Vec::new());
+                        } else {
+                            logger.log_message("Invalid value for --path argument. Please provide a valid path.", vec![term::Attr::ForegroundColor(term::color::RED)]);
+                        }
+                    },
+                    ("--debug", debug) => {
+                        match debug.parse::<bool>() {
+                            Ok(value) => {
+                                if value {
+                                    logger.log_message("Debugging is enabled.", Vec::new());
+                                } else {
+                                    logger.log_message("Debugging is disabled.", Vec::new());
+                                }
+                            },
+                            Err(_) => {
+                                logger.log_message("Invalid value for --debug argument. Please provide a boolean value.", vec![term::Attr::ForegroundColor(term::color::RED)]);
+                            }
+                        }
+                    },
+                    _ => {
+                        let help_message = format!("There is no argument with the following name. Please enter {} for help or press exit to exit.", help_command::HelpCommand::new().command);
+                        logger.log_message(help_message.as_str(), vec![term::Attr::ForegroundColor(term::color::RED)]);
+                    }
+                }
+
+                // Redo the match with the rest
+                if rest.len() > 0 {
+                    self.execute_command(rest.to_vec());
+                }
+            },
+            [a] => {
+                match *a {
+                    "--help" => logger.log_message("Help is on the way.", Vec::new()),
+                    _ => {
+                        let help_message = format!("There is no argument with the following name. Please enter {} for help or press exit to exit.", help_command::HelpCommand::new().command);
+                        logger.log_message(help_message.as_str(), vec![term::Attr::ForegroundColor(term::color::RED)]);
+                    }
+                }
+            },
+            _ => {
+                let help_message = format!("There is no argument with the following name. Please enter {} for help or press exit to exit.", help_command::HelpCommand::new().command);
+                logger.log_message(help_message.as_str(), vec![term::Attr::ForegroundColor(term::color::RED)]);
+            }
+        }
+
+        analyse_save(self.clone());
     }
 }
 
@@ -84,6 +143,12 @@ impl AnalyseSaveCommand {
                     "Boolean",
                     ),
             ],
+            selected_path: String::new(),
+            debug: false,
         }
     }
+}
+
+fn analyse_save(mut command: AnalyseSaveCommand) {
+    command.selected_path = "HEllo".to_string();
 }
