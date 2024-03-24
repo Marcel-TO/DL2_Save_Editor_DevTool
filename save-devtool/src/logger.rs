@@ -1,6 +1,7 @@
 use term;
 use std::io;
 use std::io::prelude::*;
+use termion::clear;
 
 pub struct ConsoleLogger {}
 
@@ -56,6 +57,9 @@ impl LoggerFunctions for ConsoleLogger {
         stdout.write(b"Press Enter to continue...").unwrap();
         stdout.flush().unwrap();
         io::stdin().read(&mut [0]).unwrap();
+
+        print!("\x1B[1A");
+        print!("{}", clear::CurrentLine);
     }
 
     fn get_user_input(&self) -> String {

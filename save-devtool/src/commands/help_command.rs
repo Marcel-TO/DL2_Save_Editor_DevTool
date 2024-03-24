@@ -3,10 +3,10 @@
 //! Gives an example of all supported commadns and helps the user understand the devtool.
 
 use serde::{Serialize, Deserialize};
-use crate::commands::arguments::Argument;
+use crate::arguments::base_argument::Argument;
 use crate::commands::command_functions::CommandFunctions;
 use crate::logger::{ConsoleLogger, LoggerFunctions};
-use crate::application_logic::SupportedCommands;
+use crate::commands::supported_commands::SupportedCommands;
 use term;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
