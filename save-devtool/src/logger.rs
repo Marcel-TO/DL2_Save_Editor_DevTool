@@ -3,32 +3,36 @@ use std::io;
 use std::io::prelude::*;
 use termion::clear;
 
-pub struct ConsoleLogger {}
+pub struct ConsoleLogger {
+    pub log_histroy: Vec<String>,
+}
 
 pub trait LoggerFunctions {
-    fn log_message(&self, message: &str, attributes: Vec<term::Attr>);
-    fn log_message_no_linebreak(&self, message: &str,attributes: Vec<term::Attr>);
-    fn log_error(&self, message: &str);
-    fn log_break(&self);
+    fn log_message(&mut self, message: &str, attributes: Vec<term::Attr>);
+    fn log_message_no_linebreak(&mut self, message: &str,attributes: Vec<term::Attr>);
+    fn log_error(&mut self, message: &str);
+    fn log_break(&mut self);
     fn wait_for_input(&self);
     fn get_user_input(&self) -> String;
     fn log_title_page(&self);
 }
 
 impl LoggerFunctions for ConsoleLogger {
-    fn log_message(&self, message: &str, attributes: Vec<term::Attr>) {
+    fn log_message(&mut self, message: &str, attributes: Vec<term::Attr>) {
         let mut terminal = term::stdout().unwrap();
         for attr in attributes {
             terminal.attr(attr).unwrap();
         }
 
         println!("{}", message);
+        // Adding the message to the log history.
+        self.log_histroy.push(message.to_string());
 
         terminal.reset().unwrap();
 
     }
 
-    fn log_message_no_linebreak(&self, message: &str, attributes: Vec<term::Attr>) {
+    fn log_message_no_linebreak(&mut self, message: &str, attributes: Vec<term::Attr>) {
         let mut terminal = term::stdout().unwrap();
         for attr in attributes {
             terminal.attr(attr).unwrap();
@@ -39,16 +43,17 @@ impl LoggerFunctions for ConsoleLogger {
         terminal.reset().unwrap();
     }
 
-    fn log_error(&self, message: &str) {
+    fn log_error(&mut self, message: &str) {
         let mut terminal = term::stdout().unwrap();
         terminal.fg(term::color::BRIGHT_RED).unwrap();
-
-        print!("{:?}", message);
+        let error_msg  = format!("Error: {:?}", message);
+        print!("{:?}", error_msg);
+        self.log_histroy.push(error_msg);
 
         terminal.reset().unwrap();
     }
 
-    fn log_break(&self) {
+    fn log_break(&mut self) {
         println!("");
     }
 
@@ -107,6 +112,6 @@ impl LoggerFunctions for ConsoleLogger {
 
 impl ConsoleLogger {
     pub fn new() -> Self {
-        ConsoleLogger {}
+        ConsoleLogger { log_histroy: Vec::new() }
     }
 }
