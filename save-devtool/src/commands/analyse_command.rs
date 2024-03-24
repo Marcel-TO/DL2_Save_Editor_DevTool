@@ -2,15 +2,21 @@
 //! 
 //! It uses the crate `file_analyser` to analyse a save path.
 
+use std::error::Error;
 use std::path::Path;
 use term;
 use serde::{Serialize, Deserialize};
 
-use crate::commands::arguments::Argument;
+use crate::arguments::base_argument::Argument;
+use crate::arguments::*;
 use crate::commands::command_functions::CommandFunctions;
-use crate::commands::help_command;
+use crate::commands::*;
 use crate::logger::{ConsoleLogger, LoggerFunctions};
 use crate::save_logic::file_analyser::{get_contents_from_file, load_save_file, load_save_file_pc};
+use crate::save_logic::struct_data::SaveFile;
+
+// Define global result definition for easier readability.
+type Result<T> = std::result::Result<T,Box<dyn Error>>;
 
 /// Defines the analyse command struct.
 /// 
@@ -24,9 +30,10 @@ pub struct AnalyseSaveCommand {
     pub name: &'static str,
     pub command: &'static str,
     pub description: &'static str,
-    pub arguments: Vec<Argument>,
+    pub arguments: Vec<base_argument::Argument>,
     selected_path: String,
-    debug: bool,
+    is_debugging: bool,
+    is_decompressing: bool,
 }
 
 impl CommandFunctions for AnalyseSaveCommand {
@@ -66,28 +73,67 @@ impl CommandFunctions for AnalyseSaveCommand {
     fn execute_command(&self, args: Vec<&str>) {
         // Initializes the logger.
         let logger: ConsoleLogger = ConsoleLogger::new();
+        let mut cmd = self.clone();
 
         match args.as_slice() {
             [a, b, rest @ ..] => {
                 match (*a, *b) {
-                    ("--path", path) => {
-                        if Path::new(&path.replace('"', "")).exists() {
-                            logger.log_message("Path is set.", Vec::new());
-                        } else {
-                            logger.log_message("Invalid value for --path argument. Please provide a valid path.", vec![term::Attr::ForegroundColor(term::color::RED)]);
-                        }
-                    },
-                    ("--debug", debug) => {
-                        match debug.parse::<bool>() {
-                            Ok(value) => {
-                                if value {
-                                    logger.log_message("Debugging is enabled.", Vec::new());
-                                } else {
-                                    logger.log_message("Debugging is disabled.", Vec::new());
+                    (arg, value) => {
+                        if arg == path_argument::PathArgument::new().long_arg || arg == path_argument::PathArgument::new().short_arg {
+                            if Path::new(&value.replace('"', "")).exists() {
+                                cmd.selected_path = value.replace('"', "");
+                                logger.log_message(&format!("Path is set to {}.", cmd.selected_path), Vec::new());
+                            } else {
+                                logger.log_message(
+                                    format!(
+                                        "Invalid value for [{} | {}] argument. Please provide a valid path.",
+                                        path_argument::PathArgument::new().long_arg,
+                                        path_argument::PathArgument::new().short_arg
+                                    ).as_str(),
+                                    vec![term::Attr::ForegroundColor(term::color::RED)]
+                                );
+                            }
+                        } else if arg == debug_argument::DebugArgument::new().long_arg || arg == debug_argument::DebugArgument::new().short_arg{
+                            match value.parse::<bool>() {
+                                Ok(value) => {
+                                    cmd.is_debugging = value;
+                                    if value {
+                                        logger.log_message("Debugging is enabled.", Vec::new());
+                                    } else {
+                                        logger.log_message("Debugging is disabled.", Vec::new());
+                                    }
+                                },
+                                Err(_) => {
+                                    logger.log_message(
+                                        format!(
+                                            "Invalid value for [{} | {}] argument. Please provide a boolean value.",
+                                            debug_argument::DebugArgument::new().long_arg,
+                                            debug_argument::DebugArgument::new().short_arg
+                                        ).as_str(),
+                                        vec![term::Attr::ForegroundColor(term::color::RED)]
+                                    );
                                 }
-                            },
-                            Err(_) => {
-                                logger.log_message("Invalid value for --debug argument. Please provide a boolean value.", vec![term::Attr::ForegroundColor(term::color::RED)]);
+                            }
+                        } else if arg == decompress_argument::DecompressArgument::new().long_arg || arg == decompress_argument::DecompressArgument::new().short_arg {
+                            match value.parse::<bool>() {
+                                Ok(value) => {
+                                    cmd.is_decompressing = value;
+                                    if value {
+                                        logger.log_message("Decompression is enabled.", Vec::new());
+                                    } else {
+                                        logger.log_message("Decompression is disabled.", Vec::new());
+                                    }
+                                },
+                                Err(_) => {
+                                    logger.log_message(
+                                        format!(
+                                            "Invalid value for [{} | {}] argument. Please provide a boolean value.",
+                                            decompress_argument::DecompressArgument::new().long_arg,
+                                            decompress_argument::DecompressArgument::new().short_arg
+                                        ).as_str(),
+                                        vec![term::Attr::ForegroundColor(term::color::RED)]
+                                    );
+                                }
                             }
                         }
                     },
@@ -99,12 +145,13 @@ impl CommandFunctions for AnalyseSaveCommand {
 
                 // Redo the match with the rest
                 if rest.len() > 0 {
-                    self.execute_command(rest.to_vec());
+                    cmd.execute_command(rest.to_vec());
                 }
             },
             [a] => {
+                let help = help_argument::HelpArgument::new();
                 match *a {
-                    "--help" => logger.log_message("Help is on the way.", Vec::new()),
+                    ref arg if arg == &help.long_arg => logger.log_message("Help is on the way.", Vec::new()),
                     _ => {
                         let help_message = format!("There is no argument with the following name. Please enter {} for help or press exit to exit.", help_command::HelpCommand::new().command);
                         logger.log_message(help_message.as_str(), vec![term::Attr::ForegroundColor(term::color::RED)]);
@@ -117,7 +164,7 @@ impl CommandFunctions for AnalyseSaveCommand {
             }
         }
 
-        analyse_save(self.clone());
+        analyse_save(cmd)
     }
 }
 
@@ -128,27 +175,44 @@ impl AnalyseSaveCommand {
             command: "analyse-save",
             description: "Scrapes the .sav and validates the data.",
             arguments: vec![
-                Argument::new(
-                "--path",
-                "-p",
-                "The path to the .sav file.",
-                true,
-                "String",
-                ),
-                Argument::new(
-                    "--debug",
-                    "-d",
-                    "Indicates whether each step will be manually continued by pressing enter or not.",
-                    false,
-                    "Boolean",
-                    ),
+                path_argument::PathArgument::new(),
+                debug_argument::DebugArgument::new(),
+                decompress_argument::DecompressArgument::new()
             ],
             selected_path: String::new(),
-            debug: false,
+            is_debugging: false,
+            is_decompressing: false,
         }
     }
 }
 
-fn analyse_save(mut command: AnalyseSaveCommand) {
-    command.selected_path = "HEllo".to_string();
+fn analyse_save(command: AnalyseSaveCommand) {
+    let logger = ConsoleLogger::new();
+    let file_content: Vec<u8> = get_contents_from_file(&command.selected_path).unwrap();
+    let save_file: Result<SaveFile>;
+    
+    if command.is_decompressing {
+        save_file = load_save_file_pc(&command.selected_path, file_content, command.is_debugging);
+    } else {
+        save_file = load_save_file(&command.selected_path, file_content, command.is_debugging);
+    }
+    
+    logger.log_break();
+
+    match save_file {
+        Ok(save) => {
+            logger.log_message("The save was loaded successfully!", vec![term::Attr::ForegroundColor(term::color::GREEN)]);
+            logger.log_message(format!("Base Skills: {}", save.skills.base_skills.len()).as_str(), Vec::new());
+            logger.log_message(format!("Legend Skills: {}", save.skills.legend_skills.len()).as_str(), Vec::new());
+            logger.log_message(format!("Unlockables: {}", save.unlockable_items.len()).as_str(), Vec::new());
+            for tab in save.items {
+                logger.log_message(format!("{}: {}", tab.name, tab.inventory_items.len()).as_str(), Vec::new());
+            }
+
+        },
+        Err(err) => {
+            logger.log_message(&err.to_string(), vec![term::Attr::ForegroundColor(term::color::RED)]);
+            logger.log_message("Please use the debug function for more detailed steps.", vec![term::Attr::ForegroundColor(term::color::RED)]);
+        }
+    }
 }

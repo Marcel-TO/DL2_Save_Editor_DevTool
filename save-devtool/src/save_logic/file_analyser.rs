@@ -9,10 +9,11 @@ use std::io::Write;
 use std::{fs, io::Read};
 use std::error::Error;
 use flate2::read::GzDecoder;
-use log::info;
 use regex::Regex;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use crate::logger::{ConsoleLogger, LoggerFunctions};
+
 
 
 // Import all struct datas.
@@ -43,19 +44,6 @@ static END_SKILLS: [u8; 33] = [
     0x6E
 ];
 
-// Defines the sequence where the inventory starts
-// -> Token.....Unknown
-// static START_INVENTORY: [u8; 18] = [
-//     0x54, 0x6F, 0x6B, 0x65, 0x6E, 0x00, 0x00, 0x00,
-//     0x00, 0x07, 0x00, 0x55, 0x6E, 0x6B, 0x6E, 0x6F, 0x77, 0x6E
-// ];
-
-// -> Special.....Unknown
-// static START_INVENTORY: [u8; 20] = [
-//     0x53, 0x70, 0x65, 0x63, 0x69, 0x61, 0x6C, 0x00, 0x00, 
-//     0x00, 0x00, 0x07, 0x00, 0x55, 0x6E, 0x6B, 0x6E, 0x6F, 0x77, 0x6E
-// ];
-
 static START_INVENTORY: [u8; 15] = [
     0x4D, 0x61, 0x69, 0x6E, 0x01, 0x00, 0x00, 0x00, 0x05, 
     0x00, 0x4F, 0x74, 0x68, 0x65, 0x72
@@ -66,39 +54,68 @@ static START_INVENTORY: [u8; 15] = [
 /// ### Parameter
 /// - `file_path`: The filepath of the current selected save.
 /// - `file_content`: The content of the current file.
+/// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `SaveFile`
 /// The save file with all collected data.
-pub fn load_save_file(file_path: &str, file_content: Vec<u8>) -> SaveFile {    
+pub fn load_save_file(file_path: &str, file_content: Vec<u8>, is_debugging: bool) -> Result<SaveFile> {   
+    let logger = ConsoleLogger::new(); 
     // Gets the indices of the skill data.
     let skill_start_index: usize = get_index_from_sequence(&file_content, &0, &START_SKILLS, true);
     let skill_end_index: usize = get_index_from_sequence(&file_content, &skill_start_index, &END_SKILLS, true);
-    let skill_data_range: &[u8] = &file_content[skill_start_index - 1 .. skill_end_index];
-
+    
     // Check if there was an error while trying to get the indices.
-    if skill_data_range.len() <= 0 {
-        info!("Error: index not found");
+    if skill_start_index == 0 || skill_end_index == 0 {
+        return Err("It appears the file provided does not fit the save file structure. Please check if the path is set to a valid save file.".into());
     }
+    
+    let skill_data_range: &[u8] = &file_content[skill_start_index - 1 .. skill_end_index];
 
     // Collect all skills.
     let base_skills: Vec<String> = find_base_skill_matches(&skill_data_range);
     let legend_skills: Vec<String> = find_legend_skill_matches(&skill_data_range);
-    let skills: Skills = analize_skill_data(&file_content, &base_skills, &legend_skills);
     
+    // Check if the editor did not find a base skill which is essential for analysing the save.
+    if base_skills.len() == 0 {
+        return Err("In the skill section, the editor could not validate a single skill.".into());
+    }
+    
+    let skills = analize_skill_data(&file_content, &base_skills, &legend_skills, is_debugging);
+    
+    // Check if the editor did not manage to validate the skills.
+    match &skills {
+        Ok(skills_unwrapped) => logger.log_message(&format!("{} Skills got validated", skills_unwrapped.base_skills.len() + skills_unwrapped.legend_skills.len()), Vec::new()),
+        Err(err) => return Err(err.to_string().into())
+    }
+
     // Find all unlockable items.
-    let unlockable_items: Vec<UnlockableItem> = analize_unlockable_items_data(&file_content);
+    let unlockable_result: Result<Vec<UnlockableItem>> = analize_unlockable_items_data(&file_content);
+    
+    // Check if the editor did not manage to validate the unlockables.
+    match &unlockable_result {
+        Ok(unlocks) => logger.log_message(&format!("{} Unlockables got validated.", unlocks.len()), Vec::new()),
+        Err(err) => return Err(err.to_string().into())
+    }
+    
+    let unlockable_items = unlockable_result?; 
     let index_inventory_items: usize = get_index_for_inventory_items(&unlockable_items, &file_content);
 
     // Get all items within the inventory.
-    let items: Vec<InventoryItemRow> = get_all_items(&file_content, index_inventory_items);
+    let items_result: Result<Vec<InventoryItemRow>> = get_all_items(&file_content, index_inventory_items);
 
-    SaveFile::new(
+    // Check if the editor did not manage to validate the unlockables.
+    match &items_result {
+        Ok(i) => logger.log_message(&format!("{} Tabs from inventory got validated.", i.len()), Vec::new()),
+        Err(err) => return Err(err.to_string().into())
+    }
+
+    Ok(SaveFile::new(
         file_path.to_string(),
         file_content,
-        skills,
+        skills.unwrap().clone(),
         unlockable_items,
-        items,
-    )
+        items_result?,
+    ))
 }
 
 /// Represents a method for loading a PC savefile and preparing all necessary information.
@@ -106,15 +123,16 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>) -> SaveFile {
 /// ### Parameter
 /// - `file_path`: The filepath of the current selected save.
 /// - `file_content`: The content of the current file.
+/// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `SaveFile`
 /// The save file with all collected data.
-pub fn load_save_file_pc(file_path: &str, compressed: Vec<u8>) -> SaveFile {
+pub fn load_save_file_pc(file_path: &str, compressed: Vec<u8>, is_debugging: bool) -> Result<SaveFile> {
     let mut gz = GzDecoder::new(&compressed[..]);
     let mut file_content = Vec::new();
     gz.read_to_end(&mut file_content).unwrap();
 
-    load_save_file(file_path, file_content)
+    load_save_file(file_path, file_content, is_debugging)
 }
 
 /// Represents a method for exporting the save for PC (compressing).
@@ -391,7 +409,9 @@ fn analize_skill_data(
     data: &[u8],
     base_matches: &[String],
     legend_matches: &[String],
-) -> Skills {
+    is_debugging: bool
+) -> Result<Skills> {
+    let logger = ConsoleLogger::new();
     // Prepare data.
     let mut base_skills: Vec<SkillItem> = Vec::new();
     let mut legend_skills: Vec<SkillItem> = Vec::new();
@@ -404,6 +424,12 @@ fn analize_skill_data(
         let index: usize = get_index_from_sequence(data, &last_index, match_bytes, true);
         let name: String = base_match.trim().to_string();
         let extracted_bytes: &[u8] = &data[index + match_bytes.len() .. index + match_bytes.len() + 2];
+        
+        // If debuggin is set to true, log found collected data of current skill.
+        if is_debugging {
+            logger.log_message(&format!("Found at offset: [{}] the skill: [{}]", index, name).as_str(), Vec::new());
+        }
+        
         let skill_item: SkillItem = SkillItem::new(
             name,
             index,
@@ -428,6 +454,11 @@ fn analize_skill_data(
         let name: String = legend_match.trim().to_string();
         let extracted_bytes: &[u8] = &data[index + match_bytes.len() .. index + match_bytes.len() + 2];
 
+        // If debuggin is set to true, log found collected data of current skill.
+        if is_debugging {
+            logger.log_message(&format!("Found at offset: [{}] the skill: [{}]", index, name).as_str(), Vec::new());
+        }
+
         let skill_item: SkillItem = SkillItem::new(
             name,
             index,
@@ -441,10 +472,10 @@ fn analize_skill_data(
         last_index = index;
     }
 
-    Skills::new(
+    Ok(Skills::new(
         base_skills,
         legend_skills,
-    )
+    ))
 }
 
 /// Represents a method for analyzing and extracting the data for each unlockable item.
@@ -454,7 +485,7 @@ fn analize_skill_data(
 /// 
 /// ### Returns `Vec<UnlockableItem>`
 /// All unlockable items inside the inventory.
-fn analize_unlockable_items_data(content: &[u8]) -> Vec<UnlockableItem> {
+fn analize_unlockable_items_data(content: &[u8]) -> Result<Vec<UnlockableItem>> {
     // Finds all inventory sequences inside the file.
     let indices: Vec<usize> = get_all_indices_from_sequence(content, &0, &START_INVENTORY, false);
     let mut items: Vec<UnlockableItem> = Vec::new();
@@ -502,7 +533,7 @@ fn analize_unlockable_items_data(content: &[u8]) -> Vec<UnlockableItem> {
 
     // Sorts the items by their index.
     items.sort_by(|a, b| a.index.cmp(&b.index));
-    items
+    Ok(items)
 }
 
 /// Represents a method for retrieving the index from where the inventory items start.
@@ -541,7 +572,7 @@ fn get_index_for_inventory_items(unlockable_items: &[UnlockableItem], file_conte
 /// ### Returns `Vec<Vec<InventoryItem>>`
 /// The list of all different item sections.
 /// Each section contains a list of items, for example: gear, weapons, etc....
-fn get_all_items(content: &[u8], start_index: usize) -> Vec<InventoryItemRow> {
+fn get_all_items(content: &[u8], start_index: usize) -> Result<Vec<InventoryItemRow>> {
     // Prepare data.
     let mut items: Vec<InventoryItemRow> = Vec::new();
     let mut index: usize = start_index;
@@ -639,7 +670,7 @@ fn get_all_items(content: &[u8], start_index: usize) -> Vec<InventoryItemRow> {
         index += 75;
     }
 
-    items
+    Ok(items)
 }
 
 fn create_item_row(items: Vec<InventoryItem>) -> InventoryItemRow {
