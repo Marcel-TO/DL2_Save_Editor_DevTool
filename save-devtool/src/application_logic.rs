@@ -15,7 +15,7 @@ use shell_words::split;
 /// It waits for user input and executes a matching command.
 pub fn main() {
     // Initializes the logger.
-    let logger: ConsoleLogger = ConsoleLogger::new();
+    let mut logger: ConsoleLogger = ConsoleLogger::new();
 
     // Logs the title page for the startup.
     logger.log_title_page();
@@ -37,7 +37,7 @@ pub fn main() {
             for supported_command in supported_commands::SupportedCommands::values() {
                 // Checks if the first argument matches and executes.
                 if *command == supported_command.command_name() {
-                    supported_command.execute_command(args[1..].to_vec());
+                    supported_command.execute_command(args[1..].to_vec(), &mut logger);
                     is_supported = true;
                     break;
                 } 

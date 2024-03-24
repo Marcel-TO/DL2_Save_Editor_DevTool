@@ -18,8 +18,7 @@ pub struct HelpCommand {
 }
 
 impl CommandFunctions for HelpCommand {
-    fn log_help_documentation(&self) {
-        let logger = ConsoleLogger::new();
+    fn log_help_documentation(&self, logger: &mut ConsoleLogger) {
         logger.log_message(&format!("Name: {:?} - {:?}", self.name, self.command), 
             vec![
                 term::Attr::ForegroundColor(term::color::GREEN), 
@@ -51,8 +50,8 @@ impl CommandFunctions for HelpCommand {
         logger.log_break();
     }
 
-    fn execute_command(&self, args: Vec<&str>) {
-        self.log_help_documentation();
+    fn execute_command(&self, args: Vec<&str>, logger: &mut ConsoleLogger) {
+        self.log_help_documentation(logger);
     }
 }
 
@@ -66,9 +65,7 @@ impl HelpCommand {
         }
     }
 
-    pub fn execute_help_command(&self, args: Vec<&str>, supported: Vec<SupportedCommands>) {
-        let logger = ConsoleLogger::new();
-
+    pub fn execute_help_command(&self, args: Vec<&str>, supported: Vec<SupportedCommands>, logger: &mut ConsoleLogger) {
         logger.log_message(
             "All supported commands:", 
             vec![term::Attr::Bold]
@@ -76,7 +73,7 @@ impl HelpCommand {
         logger.log_break();
         
         for command in supported {
-            command.execute_help_documentation();
+            command.execute_help_documentation(logger);
         }
     }
 }

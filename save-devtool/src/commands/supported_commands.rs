@@ -19,18 +19,18 @@ impl SupportedCommands {
     }
 
     // Implements a method to execute supported command.
-    pub fn execute_command(&self, args: Vec<&str>) {
+    pub fn execute_command(&self, args: Vec<&str>, logger: &mut ConsoleLogger) {
         match self {
-            SupportedCommands::HelpCommand => help_command::HelpCommand::new().execute_help_command(args, SupportedCommands::values()),
-            SupportedCommands::AnalyseSaveCommand => analyse_command::AnalyseSaveCommand::new().execute_command(args),
+            SupportedCommands::HelpCommand => help_command::HelpCommand::new().execute_help_command(args, SupportedCommands::values(), logger),
+            SupportedCommands::AnalyseSaveCommand => analyse_command::AnalyseSaveCommand::new().execute_command(args, logger),
         }
     }
 
     // Implements a method to execute supported command.
-    pub fn execute_help_documentation(&self) {
+    pub fn execute_help_documentation(&self, logger: &mut ConsoleLogger) {
         match self {
-            SupportedCommands::HelpCommand => help_command::HelpCommand::new().log_help_documentation(),
-            SupportedCommands::AnalyseSaveCommand => analyse_command::AnalyseSaveCommand::new().log_help_documentation(),
+            SupportedCommands::HelpCommand => help_command::HelpCommand::new().log_help_documentation(logger),
+            SupportedCommands::AnalyseSaveCommand => analyse_command::AnalyseSaveCommand::new().log_help_documentation(logger),
         }
     }
 

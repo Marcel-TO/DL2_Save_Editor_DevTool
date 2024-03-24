@@ -37,8 +37,7 @@ pub struct AnalyseSaveCommand {
 }
 
 impl CommandFunctions for AnalyseSaveCommand {
-    fn log_help_documentation(&self) {
-        let logger = ConsoleLogger::new();
+    fn log_help_documentation(&self, logger: &mut ConsoleLogger) {
         logger.log_message(&format!("Name: {:?} - {:?}", self.name, self.command), 
             vec![
                 term::Attr::ForegroundColor(term::color::GREEN), 
@@ -70,9 +69,7 @@ impl CommandFunctions for AnalyseSaveCommand {
         logger.log_break();
     }
 
-    fn execute_command(&self, args: Vec<&str>) {
-        // Initializes the logger.
-        let logger: ConsoleLogger = ConsoleLogger::new();
+    fn execute_command(&self, args: Vec<&str>, logger: &mut ConsoleLogger) {
         let mut cmd = self.clone();
 
         match args.as_slice() {
@@ -84,13 +81,12 @@ impl CommandFunctions for AnalyseSaveCommand {
                                 cmd.selected_path = value.replace('"', "");
                                 logger.log_message(&format!("Path is set to {}.", cmd.selected_path), Vec::new());
                             } else {
-                                logger.log_message(
+                                logger.log_error(
                                     format!(
                                         "Invalid value for [{} | {}] argument. Please provide a valid path.",
                                         path_argument::PathArgument::new().long_arg,
                                         path_argument::PathArgument::new().short_arg
-                                    ).as_str(),
-                                    vec![term::Attr::ForegroundColor(term::color::RED)]
+                                    ).as_str()
                                 );
                             }
                         } else if arg == debug_argument::DebugArgument::new().long_arg || arg == debug_argument::DebugArgument::new().short_arg{
@@ -104,13 +100,12 @@ impl CommandFunctions for AnalyseSaveCommand {
                                     }
                                 },
                                 Err(_) => {
-                                    logger.log_message(
+                                    logger.log_error(
                                         format!(
                                             "Invalid value for [{} | {}] argument. Please provide a boolean value.",
                                             debug_argument::DebugArgument::new().long_arg,
                                             debug_argument::DebugArgument::new().short_arg
-                                        ).as_str(),
-                                        vec![term::Attr::ForegroundColor(term::color::RED)]
+                                        ).as_str()
                                     );
                                 }
                             }
@@ -125,13 +120,12 @@ impl CommandFunctions for AnalyseSaveCommand {
                                     }
                                 },
                                 Err(_) => {
-                                    logger.log_message(
+                                    logger.log_error(
                                         format!(
                                             "Invalid value for [{} | {}] argument. Please provide a boolean value.",
                                             decompress_argument::DecompressArgument::new().long_arg,
                                             decompress_argument::DecompressArgument::new().short_arg
-                                        ).as_str(),
-                                        vec![term::Attr::ForegroundColor(term::color::RED)]
+                                        ).as_str()
                                     );
                                 }
                             }
@@ -139,13 +133,13 @@ impl CommandFunctions for AnalyseSaveCommand {
                     },
                     _ => {
                         let help_message = format!("There is no argument with the following name. Please enter {} for help or press exit to exit.", help_command::HelpCommand::new().command);
-                        logger.log_message(help_message.as_str(), vec![term::Attr::ForegroundColor(term::color::RED)]);
+                        logger.log_error(help_message.as_str());
                     }
                 }
 
                 // Redo the match with the rest
                 if rest.len() > 0 {
-                    cmd.execute_command(rest.to_vec());
+                    cmd.execute_command(rest.to_vec(), logger);
                 }
             },
             [a] => {
@@ -154,17 +148,17 @@ impl CommandFunctions for AnalyseSaveCommand {
                     ref arg if arg == &help.long_arg => logger.log_message("Help is on the way.", Vec::new()),
                     _ => {
                         let help_message = format!("There is no argument with the following name. Please enter {} for help or press exit to exit.", help_command::HelpCommand::new().command);
-                        logger.log_message(help_message.as_str(), vec![term::Attr::ForegroundColor(term::color::RED)]);
+                        logger.log_error(help_message.as_str());
                     }
                 }
             },
             _ => {
                 let help_message = format!("There is no argument with the following name. Please enter {} for help or press exit to exit.", help_command::HelpCommand::new().command);
-                logger.log_message(help_message.as_str(), vec![term::Attr::ForegroundColor(term::color::RED)]);
+                logger.log_error(help_message.as_str());
             }
         }
 
-        analyse_save(cmd)
+        analyse_save(cmd, logger)
     }
 }
 
@@ -186,15 +180,14 @@ impl AnalyseSaveCommand {
     }
 }
 
-fn analyse_save(command: AnalyseSaveCommand) {
-    let logger = ConsoleLogger::new();
+fn analyse_save(command: AnalyseSaveCommand, logger: &mut ConsoleLogger) {
     let file_content: Vec<u8> = get_contents_from_file(&command.selected_path).unwrap();
     let save_file: Result<SaveFile>;
     
     if command.is_decompressing {
-        save_file = load_save_file_pc(&command.selected_path, file_content, command.is_debugging);
+        save_file = load_save_file_pc(&command.selected_path, file_content, logger, command.is_debugging);
     } else {
-        save_file = load_save_file(&command.selected_path, file_content, command.is_debugging);
+        save_file = load_save_file(&command.selected_path, file_content, logger, command.is_debugging);
     }
     
     logger.log_break();
@@ -211,8 +204,8 @@ fn analyse_save(command: AnalyseSaveCommand) {
 
         },
         Err(err) => {
-            logger.log_message(&err.to_string(), vec![term::Attr::ForegroundColor(term::color::RED)]);
-            logger.log_message("Please use the debug function for more detailed steps.", vec![term::Attr::ForegroundColor(term::color::RED)]);
+            logger.log_error(&err.to_string());
+            logger.log_error("Please use the debug function for more detailed steps.");
         }
     }
 }

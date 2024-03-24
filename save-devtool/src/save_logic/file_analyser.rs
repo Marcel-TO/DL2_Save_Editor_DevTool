@@ -13,9 +13,6 @@ use regex::Regex;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use crate::logger::{ConsoleLogger, LoggerFunctions};
-
-
-
 // Import all struct datas.
 use crate::save_logic::struct_data::{
     SaveFile, 
@@ -33,7 +30,7 @@ use crate::save_logic::struct_data::{
 type Result<T> = std::result::Result<T,Box<dyn Error>>;
 
 // Defines the first sequence for the skill section.
-static START_SKILLS: &[u8] = "Skills::SkillInstance".as_bytes();
+static START_SKILLS: &[u8] = b"Skills::SkillInstance";
 
 // Defines the last sequence for the skill section.
 static END_SKILLS: [u8; 33] = [
@@ -58,8 +55,7 @@ static START_INVENTORY: [u8; 15] = [
 /// 
 /// ### Returns `SaveFile`
 /// The save file with all collected data.
-pub fn load_save_file(file_path: &str, file_content: Vec<u8>, is_debugging: bool) -> Result<SaveFile> {   
-    let logger = ConsoleLogger::new(); 
+pub fn load_save_file(file_path: &str, file_content: Vec<u8>, logger: &mut ConsoleLogger, is_debugging: bool) -> Result<SaveFile> {   
     // Gets the indices of the skill data.
     let skill_start_index: usize = get_index_from_sequence(&file_content, &0, &START_SKILLS, true);
     let skill_end_index: usize = get_index_from_sequence(&file_content, &skill_start_index, &END_SKILLS, true);
@@ -80,7 +76,7 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>, is_debugging: bool
         return Err("In the skill section, the editor could not validate a single skill.".into());
     }
     
-    let skills = analize_skill_data(&file_content, &base_skills, &legend_skills, is_debugging);
+    let skills = analize_skill_data(&file_content, &base_skills, &legend_skills, logger, is_debugging);
     
     // Check if the editor did not manage to validate the skills.
     match &skills {
@@ -89,7 +85,7 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>, is_debugging: bool
     }
 
     // Find all unlockable items.
-    let unlockable_result: Result<Vec<UnlockableItem>> = analize_unlockable_items_data(&file_content);
+    let unlockable_result: Result<Vec<UnlockableItem>> = analize_unlockable_items_data(&file_content, logger, is_debugging);
     
     // Check if the editor did not manage to validate the unlockables.
     match &unlockable_result {
@@ -98,10 +94,18 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>, is_debugging: bool
     }
     
     let unlockable_items = unlockable_result?; 
-    let index_inventory_items: usize = get_index_for_inventory_items(&unlockable_items, &file_content);
+    let index_inventory_items_result: Result<usize> = get_index_for_inventory_items(&unlockable_items, &file_content, logger, is_debugging);
+
+    // Check if the editor did not manage to validate the inventory index.
+    match &index_inventory_items_result {
+        Ok(index) => logger.log_message(&format!("The index will start the inventory validation at offset: [{}]", index), Vec::new()),
+        Err(err) => return Err(err.to_string().into())
+    }
+
+    let index_inventory_items: usize = index_inventory_items_result.unwrap();
 
     // Get all items within the inventory.
-    let items_result: Result<Vec<InventoryItemRow>> = get_all_items(&file_content, index_inventory_items);
+    let items_result: Result<Vec<InventoryItemRow>> = get_all_items(&file_content, index_inventory_items, logger, is_debugging);
 
     // Check if the editor did not manage to validate the unlockables.
     match &items_result {
@@ -127,12 +131,12 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>, is_debugging: bool
 /// 
 /// ### Returns `SaveFile`
 /// The save file with all collected data.
-pub fn load_save_file_pc(file_path: &str, compressed: Vec<u8>, is_debugging: bool) -> Result<SaveFile> {
+pub fn load_save_file_pc(file_path: &str, compressed: Vec<u8>, logger: &mut ConsoleLogger, is_debugging: bool) -> Result<SaveFile> {
     let mut gz = GzDecoder::new(&compressed[..]);
     let mut file_content = Vec::new();
     gz.read_to_end(&mut file_content).unwrap();
 
-    load_save_file(file_path, file_content, is_debugging)
+    load_save_file(file_path, file_content, logger, is_debugging)
 }
 
 /// Represents a method for exporting the save for PC (compressing).
@@ -402,6 +406,7 @@ fn find_legend_skill_matches(content: &[u8]) -> Vec<String> {
 /// - `data`: The needed byte data of the current save.
 /// - `base_matches`: All base skill names that match the skill pattern.
 /// - `legend_matches`: All legend skill names that match the skill pattern.
+/// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `Skills`
 /// All matching skills.
@@ -409,9 +414,9 @@ fn analize_skill_data(
     data: &[u8],
     base_matches: &[String],
     legend_matches: &[String],
+    logger: &mut ConsoleLogger,
     is_debugging: bool
 ) -> Result<Skills> {
-    let logger = ConsoleLogger::new();
     // Prepare data.
     let mut base_skills: Vec<SkillItem> = Vec::new();
     let mut legend_skills: Vec<SkillItem> = Vec::new();
@@ -454,7 +459,7 @@ fn analize_skill_data(
         let name: String = legend_match.trim().to_string();
         let extracted_bytes: &[u8] = &data[index + match_bytes.len() .. index + match_bytes.len() + 2];
 
-        // If debuggin is set to true, log found collected data of current skill.
+        // If debugging is set to true, log found collected data of current skill.
         if is_debugging {
             logger.log_message(&format!("Found at offset: [{}] the skill: [{}]", index, name).as_str(), Vec::new());
         }
@@ -468,7 +473,7 @@ fn analize_skill_data(
         );
 
         legend_skills.push(skill_item);
-        // Update index to improve performance.
+        // Updates index to improve performance.
         last_index = index;
     }
 
@@ -482,10 +487,11 @@ fn analize_skill_data(
 /// 
 /// ### Parameter
 /// - `content`: The byte data of the save.
+/// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `Vec<UnlockableItem>`
 /// All unlockable items inside the inventory.
-fn analize_unlockable_items_data(content: &[u8]) -> Result<Vec<UnlockableItem>> {
+fn analize_unlockable_items_data(content: &[u8], logger: &mut ConsoleLogger, is_debugging: bool) -> Result<Vec<UnlockableItem>> {    
     // Finds all inventory sequences inside the file.
     let indices: Vec<usize> = get_all_indices_from_sequence(content, &0, &START_INVENTORY, false);
     let mut items: Vec<UnlockableItem> = Vec::new();
@@ -493,11 +499,15 @@ fn analize_unlockable_items_data(content: &[u8]) -> Result<Vec<UnlockableItem>> 
 
     // Checks if the sequence is not valid.
     if indices.len() == 0 {
-        panic!("Start pattern(s) not found in file.");
+        return Err("Start pattern(s) for unlockables not found in save".into());
     }
 
-    // Takes the second inventory index for needed information.
+    // Takes the last inventory index for needed information.
     let start_index: usize = indices[indices.len() - 1];
+    if is_debugging {
+        logger.log_message(&format!("The starting index for the unlockables is: [{}]", start_index), Vec::new());
+    }
+
     // Compresses the data and only extracts the inventory part of the file.
     let inventory_data: &[u8] = &content[start_index..];
     // Prepares a list of all matching strings.
@@ -513,7 +523,7 @@ fn analize_unlockable_items_data(content: &[u8]) -> Result<Vec<UnlockableItem>> 
     matching_string_indices.append(&mut tool_skin_indices);
 
     if matching_string_indices.len() == 0 {
-        panic!("No matching unlockable item strings found.")
+        return Err("No matching unlockable item strings found. in save".into())
     }
 
     // Iterate through all matching indices.
@@ -523,6 +533,12 @@ fn analize_unlockable_items_data(content: &[u8]) -> Result<Vec<UnlockableItem>> 
         let current_index: usize = matching_string_indices[i] + &start_index;
         let size: usize = clean_string.as_bytes().len();
         let sgd: Vec<u8> = inventory_data[matching_string_indices[i]..matching_string_indices[i] + size].to_vec();
+        
+        // If debugging is set to true, log collected data of current unlockable.
+        if is_debugging {
+            logger.log_message(&format!("Found the unlockable: [{}]", clean_string).as_str(), Vec::new());
+        }
+
         items.push(UnlockableItem::new(
             clean_string,
             current_index,
@@ -544,7 +560,7 @@ fn analize_unlockable_items_data(content: &[u8]) -> Result<Vec<UnlockableItem>> 
 /// 
 /// ### Returns `usize`
 /// The index from where the inventory items continue.
-fn get_index_for_inventory_items(unlockable_items: &[UnlockableItem], file_content: &[u8]) -> usize {
+fn get_index_for_inventory_items(unlockable_items: &[UnlockableItem], file_content: &[u8], logger: &mut ConsoleLogger, is_debugging: bool) -> Result<usize> {
     let start_index: usize = unlockable_items[0].index + unlockable_items[0].size;
     let string_content = String::from_utf8_lossy(&file_content[start_index..]);
 
@@ -552,14 +568,24 @@ fn get_index_for_inventory_items(unlockable_items: &[UnlockableItem], file_conte
     
     // -36 to get the chunk data from the first SGDs
     if sgd_position > 0 {
-        return start_index + sgd_position - 36
+        let inventory_index = start_index + sgd_position - 36;
+        
+        if is_debugging {
+            logger.log_message(format!("The starting index of the inventory is expected to be at [{}]; (the first SGDs Data)", inventory_index).as_str(), Vec::new())
+        }
+
+        return Ok(inventory_index)
     }
 
-    // +75 as jump offset between unlockables and SGDs from items
+    // +76 as jump offset between unlockables and SGDs from items
     if unlockable_items.len() > 0 {
-        return unlockable_items[unlockable_items.len() - 1].index + unlockable_items[unlockable_items.len() - 1].size + 76
+        let inventory_index = unlockable_items[unlockable_items.len() - 1].index + unlockable_items[unlockable_items.len() - 1].size + 76;
+        if is_debugging {
+            logger.log_message(format!("The starting index of the inventory is expected to be at [{}]; (the first SGDs Data)", inventory_index).as_str(), Vec::new())
+        }
+        Ok(inventory_index)
     } else {
-        0 // Default return value if no match is found
+        Err("There was no match regarding the start index of the inventory.".into())
     }
 }
 
@@ -572,7 +598,7 @@ fn get_index_for_inventory_items(unlockable_items: &[UnlockableItem], file_conte
 /// ### Returns `Vec<Vec<InventoryItem>>`
 /// The list of all different item sections.
 /// Each section contains a list of items, for example: gear, weapons, etc....
-fn get_all_items(content: &[u8], start_index: usize) -> Result<Vec<InventoryItemRow>> {
+fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger, is_debugging: bool) -> Result<Vec<InventoryItemRow>> {
     // Prepare data.
     let mut items: Vec<InventoryItemRow> = Vec::new();
     let mut index: usize = start_index;
@@ -581,12 +607,16 @@ fn get_all_items(content: &[u8], start_index: usize) -> Result<Vec<InventoryItem
         // Prepare the inner item section.
         let mut inner_item_list: Vec<InventoryItem> = Vec::new();
         // Find all data chunks for the section.
-        let (chunks, new_index) = find_all_inventory_chunks(content, index);
-
-        // Check if there are no chunks left.
-        if chunks.len() == 0 {
-            break;
+        let find_result = find_all_inventory_chunks(content, index, logger, is_debugging);
+        
+        match find_result {
+            Ok((chunks, new_index)) => logger.log_message(&format!("[{}] inventory chunks found. The new index is: [{}]", chunks.len(), new_index), Vec::new()),
+            Err(err) => {
+                break;
+            }
         }
+
+        let (chunks, new_index) = find_result.unwrap();
 
         // Find the corresponding matches to each chunk (Including Mod data).
         let (current_item_ids, current_item_indices) = find_amount_of_matches(content, new_index, chunks.len());
@@ -712,10 +742,10 @@ fn create_item_row(items: Vec<InventoryItem>) -> InventoryItemRow {
 /// 
 /// ### Returns `(Vec<InventoryItem>, usize)`
 /// The array of all found chunks inside the inventory and the last position to increase further performance.
-fn find_all_inventory_chunks(content: &[u8], start_index: usize) -> (Vec<InventoryChunk>, usize) {
+fn find_all_inventory_chunks(content: &[u8], start_index: usize, logger: &mut ConsoleLogger, is_debugging: bool) -> Result<(Vec<InventoryChunk>, usize)> {
     // Checks if the index is out of range.
     if start_index > content.len() {
-        panic!("The start_index must not be greater than the content length.")
+        return Err("The start_index must not be greater than the content length.".into());
     }
 
     // Prepare chunk vector.
@@ -734,7 +764,7 @@ fn find_all_inventory_chunks(content: &[u8], start_index: usize) -> (Vec<Invento
 
     // Check if no matches where found.
     if match_values.is_empty() {
-        return (chunks, 0);
+        return Err(format!("No matches found from the start index: [{}]", start_index).into());
     } else {
         // Iterate through each value and get the needed 12 Bytes of data.
         for i in 0..match_values.len() {
@@ -752,6 +782,10 @@ fn find_all_inventory_chunks(content: &[u8], start_index: usize) -> (Vec<Invento
             index += durability_offset;
             let chunk_space: Vec<u8> = content[index..index+space_offset].to_vec();
 
+            if is_debugging {
+                logger.log_message(&format!("SGDs found at offset: [{}]", data_index), Vec::new());
+            }
+
             chunks.push(InventoryChunk::new(
                 level_data,
                 seed_data,
@@ -765,7 +799,7 @@ fn find_all_inventory_chunks(content: &[u8], start_index: usize) -> (Vec<Invento
         // The 4 is for the SGDs name offset.
         let last_index: usize = chunks.last().map_or(start_index, |chunk| chunk.index + data_offset + 4);
 
-        (chunks, last_index)
+        Ok((chunks, last_index))
     }
 }
 
