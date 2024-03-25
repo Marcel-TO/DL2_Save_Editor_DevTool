@@ -887,7 +887,7 @@ fn is_savegame_between(content: &[u8], start_index: usize, end_index: usize) -> 
 /// 
 /// ### Returns `(Vec<String>, Vec<usize>)`
 /// A tuple that contains the matches for the current chunk and their corresponding index.
-fn find_amount_of_matches(content: &[u8], start_index: usize, amount: usize) -> (Vec<String>, Vec<usize>) {
+fn find_amount_of_matches(content: &[u8], start_index: usize, amount: usize, logger: &mut ConsoleLogger, is_debugging: bool) -> (Vec<String>, Vec<usize>) {
     // Prepare data.
     let mut counter: usize = 0;
     let mut mod_counter: i32 = 0;
