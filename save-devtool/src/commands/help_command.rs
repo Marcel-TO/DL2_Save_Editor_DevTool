@@ -50,8 +50,18 @@ impl CommandFunctions for HelpCommand {
         logger.log_break();
     }
 
-    fn execute_command(&self, args: Vec<&str>, logger: &mut ConsoleLogger) {
+    fn execute_command(&mut self, args: Vec<&str>, logger: &mut ConsoleLogger) {
+        self.validate_arguments(args, logger);
         self.log_help_documentation(logger);
+    }
+
+    fn validate_arguments(&mut self, args: Vec<&str>, logger: &mut ConsoleLogger) {
+        if args.len() > 0 {
+            logger.log_error("The help command does not support any arguments.");
+            logger.log_break();
+            return;
+        }
+    
     }
 }
 

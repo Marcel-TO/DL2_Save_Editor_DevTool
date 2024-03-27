@@ -24,6 +24,8 @@ pub fn main() {
     loop {
         // Awaits user input.
         let user_input: String = logger.get_user_input();
+        logger.log_break();
+        
         // Splits the user input into arguments.
         let split_result = split(&user_input).unwrap_or_else(|_| Vec::new());
         let args: Vec<&str> = split_result.iter().map(|s| s.as_str()).collect();

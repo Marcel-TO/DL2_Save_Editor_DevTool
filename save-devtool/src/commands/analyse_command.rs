@@ -69,17 +69,22 @@ impl CommandFunctions for AnalyseSaveCommand {
         logger.log_break();
     }
 
-    fn execute_command(&self, args: Vec<&str>, logger: &mut ConsoleLogger) {
-        let mut cmd = self.clone();
+    fn execute_command(&mut self, args: Vec<&str>, logger: &mut ConsoleLogger) {
+        self.validate_arguments(args, logger);
+        
 
+        analyse_save(self, logger)
+    }
+
+    fn validate_arguments(&mut self, args: Vec<&str>, logger: &mut ConsoleLogger) {
         match args.as_slice() {
             [a, b, rest @ ..] => {
                 match (*a, *b) {
                     (arg, value) => {
                         if arg == path_argument::PathArgument::new().long_arg || arg == path_argument::PathArgument::new().short_arg {
                             if Path::new(&value.replace('"', "")).exists() {
-                                cmd.selected_path = value.replace('"', "");
-                                logger.log_message(&format!("Path is set to {}.", cmd.selected_path), Vec::new());
+                                self.selected_path = value.replace('"', "");
+                                logger.log_message(&format!("Path is set to {}.", self.selected_path), Vec::new());
                             } else {
                                 logger.log_error(
                                     format!(
@@ -92,7 +97,7 @@ impl CommandFunctions for AnalyseSaveCommand {
                         } else if arg == debug_argument::DebugArgument::new().long_arg || arg == debug_argument::DebugArgument::new().short_arg{
                             match value.parse::<bool>() {
                                 Ok(value) => {
-                                    cmd.is_debugging = value;
+                                    self.is_debugging = value;
                                     if value {
                                         logger.log_message("Debugging is enabled.", Vec::new());
                                     } else {
@@ -112,7 +117,7 @@ impl CommandFunctions for AnalyseSaveCommand {
                         } else if arg == decompress_argument::DecompressArgument::new().long_arg || arg == decompress_argument::DecompressArgument::new().short_arg {
                             match value.parse::<bool>() {
                                 Ok(value) => {
-                                    cmd.is_decompressing = value;
+                                    self.is_decompressing = value;
                                     if value {
                                         logger.log_message("Decompression is enabled.", Vec::new());
                                     } else {
@@ -139,7 +144,7 @@ impl CommandFunctions for AnalyseSaveCommand {
 
                 // Redo the match with the rest
                 if rest.len() > 0 {
-                    cmd.execute_command(rest.to_vec(), logger);
+                    self.validate_arguments(rest.to_vec(), logger);
                 }
             },
             [a] => {
@@ -157,8 +162,6 @@ impl CommandFunctions for AnalyseSaveCommand {
                 logger.log_error(help_message.as_str());
             }
         }
-
-        analyse_save(cmd, logger)
     }
 }
 
@@ -180,7 +183,7 @@ impl AnalyseSaveCommand {
     }
 }
 
-fn analyse_save(command: AnalyseSaveCommand, logger: &mut ConsoleLogger) {
+fn analyse_save(command: &mut AnalyseSaveCommand, logger: &mut ConsoleLogger) {
     let file_content: Vec<u8> = get_contents_from_file(&command.selected_path).unwrap();
     let save_file: Result<SaveFile>;
     
@@ -202,6 +205,7 @@ fn analyse_save(command: AnalyseSaveCommand, logger: &mut ConsoleLogger) {
                 logger.log_message(format!("{}: {}", tab.name, tab.inventory_items.len()).as_str(), Vec::new());
             }
 
+            logger.log_break();
         },
         Err(err) => {
             logger.log_error(&err.to_string());
