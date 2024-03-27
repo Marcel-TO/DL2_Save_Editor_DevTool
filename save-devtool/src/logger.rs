@@ -1,7 +1,7 @@
 use term;
 use std::io;
 use std::io::prelude::*;
-use termion::clear;
+use term_size;
 
 pub struct ConsoleLogger {
     pub log_histroy: Vec<String>,
@@ -38,7 +38,7 @@ impl LoggerFunctions for ConsoleLogger {
             terminal.attr(attr).unwrap();
         }
 
-        print!("{:?}", message);
+        print!("{}", message);
 
         terminal.reset().unwrap();
     }
@@ -46,8 +46,8 @@ impl LoggerFunctions for ConsoleLogger {
     fn log_error(&mut self, message: &str) {
         let mut terminal = term::stdout().unwrap();
         terminal.fg(term::color::BRIGHT_RED).unwrap();
-        let error_msg  = format!("Error: {:?}", message);
-        print!("{:?}", error_msg);
+        let error_msg  = format!("Error: {}", message);
+        println!("{:?}", error_msg);
         self.log_histroy.push(error_msg);
 
         terminal.reset().unwrap();
@@ -63,8 +63,15 @@ impl LoggerFunctions for ConsoleLogger {
         stdout.flush().unwrap();
         io::stdin().read(&mut [0]).unwrap();
 
-        print!("\x1B[1A");
-        print!("{}", clear::CurrentLine);
+        if let Some((w, _)) = term_size::dimensions() {
+            print!("\x1B[1A");
+
+            for _ in 0..w {
+                print!(" ");
+            }
+
+            println!("");
+        }
     }
 
     fn get_user_input(&self) -> String {
