@@ -641,7 +641,7 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
         match find_result {
             Ok((ref chunks, ref new_index)) => {
                 logger.log_message(&format!("[{}] inventory chunks found. The new index is: [{}]", chunks.len(), new_index), Vec::new());
-
+                logger.log_break();
                 // Wait for user input to continue with the analysation.
                 if is_debugging {
                     logger.wait_for_input();
@@ -669,7 +669,7 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
         // iterate through each found match and validate the position of the match.
         for i in 0..current_item_ids.len() {
             // Check if the match is an item or a mod.
-            if !&current_item_ids[i].contains("Mod") && !&current_item_ids[i].contains("charm") && &current_item_ids[i] != "NoneSGDs" && &current_item_ids[i] != "SGDs" {
+            if !&current_item_ids[i].contains("Mod") && !&current_item_ids[i].contains("charm") && &current_item_ids[i] != "NoneSGDs" && &current_item_ids[i] != "SGDs" && &current_item_ids[i] != "PursuitSGDs" {
                 // Check if the bullet acts as item or mod or if there is a transmog item.
                 if ((current_item_ids[i].contains("Bullet") && mod_counter > 0 && mod_counter < 4) || (current_item_ids[i].contains("Craftplan") && mod_counter < 4)) {
                     if is_debugging {
@@ -750,13 +750,15 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
         // Add the inner section to the item list and fix the index by offset.
         let item_row = create_item_row(inner_item_list.clone());
 
-        // Check if the amount of items is equal to the amount of chunks.
+        // // Check if the amount of items is equal to the amount of chunks.
+        // // OUTDATED: THis check is not valid, because the SGDs
         if item_row.inventory_items.len() != chunks.len() {
             return Err(format!("Inside the [{}] section, there are [{}] SGDs chunks, but the editor managed to validate [{}] items", item_row.name, chunks.len(), item_row.inventory_items.len()).into());
         }
 
         items.push(item_row);
-        let last_mod: &Mod = &inner_item_list[inner_item_list.clone().len() - 1].mod_data[inner_item_list[inner_item_list.clone().len() - 1].mod_data.len() - 1];
+        let last_inner_item: &InventoryItem = &inner_item_list.last().unwrap();
+        let last_mod: &Mod = last_inner_item.mod_data.last().unwrap();
         index = last_mod.index + last_mod.name.len();
         index += 75;
 
@@ -971,11 +973,15 @@ fn find_amount_of_matches(content: &[u8], start_index: usize, amount: usize, log
         if counter <= amount && mat.as_str().len() >= 4 {
             // set set the current item id.
             let tmp_matching_value = mat.as_str().to_string();
+            if tmp_matching_value == "wpn_2hp_bow_t5SGDs" {
+                println!("SGDs found");
+            }
+
             let index = get_index_from_sequence(content, &iteration_index, &tmp_matching_value.as_bytes(), true);
             
             // Check if it is an item or a mod.
             if !mat.as_str().contains("Mod") && !mat.as_str().contains("charm") &&
-                mat.as_str() != "NoneSGDs" && mat.as_str() != "SGDs" {
+                mat.as_str() != "NoneSGDs" && mat.as_str() != "SGDs" && !mat.as_str().contains("Pursuit") {
 
                     // Check if the bullet acts as item or mod.
                     if (mat.as_str().contains("Bullet") || mat.as_str().contains("Craftplan")) && mod_counter > 0 && mod_counter <= 4 {                        
@@ -986,6 +992,9 @@ fn find_amount_of_matches(content: &[u8], start_index: usize, amount: usize, log
                         // Compares if the SGDs have the correct size
                         if size > 0 {
                             if tmp_matching_value.clone().ends_with("SGDs") && size + 4 == tmp_matching_value.clone().len() {
+                                if is_debugging {
+                                    logger.log_message(&format!("Found potential SGDs match: [{}]", mat.as_str()), Vec::new());
+                                }
                                 match_values.push(tmp_matching_value.clone());
                                 match_indices.push(index);
                                 iteration_index = index + tmp_matching_value.len();
@@ -1029,7 +1038,7 @@ fn find_amount_of_matches(content: &[u8], start_index: usize, amount: usize, log
                     break;
                 } 
                 // Checks if the match equals SGDs, since it is also possible for weapon mods.
-                else if mat.as_str() == "SGDs" {
+                else if mat.as_str() == "SGDs" || mat.as_str() == "PursuitSGDs" {
                     // Check if Savegame indicator is between
                     if is_savegame_match {
                         if let Some(savegame) = savegame_re.find(&string_data) {
