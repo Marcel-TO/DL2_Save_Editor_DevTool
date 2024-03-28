@@ -658,20 +658,21 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
         let (current_item_ids, current_item_indices) = find_amount_of_matches(content, new_index, chunks.len(), logger, is_debugging);
 
         // Preparing iteration data.
-        let mut mod_counter: usize = 0;
         let mut current_item_id: String = String::new();
         let mut current_item_index: usize = 0;
         let mut chunk_counter: usize = chunks.len() - 1;
         let mut current_inv_chunk: InventoryChunk = chunks[chunk_counter].clone();
         let mut match_bytes: &[u8] = current_item_id.as_bytes();
         let mut mods: Vec<Mod> = Vec::new();
+        let mut last_match: String = String::new();
 
         // iterate through each found match and validate the position of the match.
         for i in 0..current_item_ids.len() {
             // Check if the match is an item or a mod.
-            if !&current_item_ids[i].contains("Mod") && !&current_item_ids[i].contains("charm") && &current_item_ids[i] != "NoneSGDs" && &current_item_ids[i] != "SGDs" && &current_item_ids[i] != "PursuitSGDs" {
+            if !&current_item_ids[i].contains("Mod") && !&current_item_ids[i].contains("charm") {
                 // Check if the bullet acts as item or mod or if there is a transmog item.
-                if ((current_item_ids[i].contains("Bullet") && mod_counter > 0 && mod_counter < 4) || (current_item_ids[i].contains("Craftplan") && mod_counter < 4)) {
+                if (current_item_ids[i].contains("Bullet") || current_item_ids[i].contains("Craftplan")) &&
+                    (last_match.contains("bow") || last_match.contains("firearm") || last_match.contains("gun")) {
                     if is_debugging {
                         logger.log_message(&format!("Since this item can be item and mod, the editor validated it as a mod: [{}]", current_item_ids[i].to_string()), Vec::new());
                     }
@@ -682,12 +683,23 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
                         content[current_item_indices[i] .. current_item_indices[i] + 30].to_vec(),
                     ));
 
-                    mod_counter += 1;
                     continue;
-                }    
+                }   
+
+                // Set the current item initialization.
+                current_item_id = current_item_ids[i].trim_end_matches("SGDs").to_string();
+                match_bytes = current_item_ids[i].as_bytes();
+                current_item_index = current_item_indices[i];
+                current_inv_chunk = chunks[chunk_counter].clone();
+                last_match = current_item_ids[i].clone();
+                
+                // The chunk counter is decreased to get the correct chunk for the item, since the chunk is mirrored to the ids.
+                if chunk_counter > 0 {
+                    chunk_counter -= 1;
+                } 
                 
                 // Add the previous item (if exists) to the list.
-                if current_item_id != String::new() && !mods.is_empty() {
+                if current_item_id != String::new() {
                     inner_item_list.push(InventoryItem::new(
                         current_item_id.replace("\x00", "").replace("\x01", ""),
                         current_item_index,
@@ -702,19 +714,8 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
                         logger.log_message(&format!("[{}]", current_item_id.replace("\x00", "").replace("\x01", "")), vec![term::Attr::ForegroundColor(term::color::CYAN)]);
                     }
 
-                    mod_counter = 0;
                     mods.clear();
-                }
-
-                // Set the current item initialization.
-                current_item_id = current_item_ids[i].trim_end_matches("SGDs").to_string();
-                match_bytes = current_item_ids[i].as_bytes();
-                current_item_index = current_item_indices[i];
-                current_inv_chunk = chunks[chunk_counter].clone();
-                
-                if chunk_counter > 0 {
-                    chunk_counter -= 1;
-                }
+                }   
             }
             // Add mod to mods list
             else {
@@ -727,39 +728,21 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
                     current_item_indices[i],
                     content[current_item_indices[i] .. current_item_indices[i] + 30].to_vec(),
                 ));
-
-                mod_counter += 1;
             }
         }
-    
-        // Add the last item to the inner section.
-        inner_item_list.push(InventoryItem::new(
-            current_item_id.replace("\x00", "").replace("\x01", ""),
-            current_item_index,
-            match_bytes.len(),
-            match_bytes.to_vec(),
-            current_inv_chunk.clone(),
-            mods.clone(),
-        ));
 
-        if is_debugging {
-            logger.log_message_no_linebreak("Validated item: ", Vec::new());
-            logger.log_message(&format!("[{}]", current_item_id.replace("\x00", "").replace("\x01", "")), vec![term::Attr::ForegroundColor(term::color::CYAN)]);
-        }
-
-        // Add the inner section to the item list and fix the index by offset.
+        // Add the inner section to the item list.
         let item_row = create_item_row(inner_item_list.clone());
-
-        // // Check if the amount of items is equal to the amount of chunks.
-        // // OUTDATED: THis check is not valid, because the SGDs
-        if item_row.inventory_items.len() != chunks.len() {
-            return Err(format!("Inside the [{}] section, there are [{}] SGDs chunks, but the editor managed to validate [{}] items", item_row.name, chunks.len(), item_row.inventory_items.len()).into());
-        }
-
         items.push(item_row);
         let last_inner_item: &InventoryItem = &inner_item_list.last().unwrap();
-        let last_mod: &Mod = last_inner_item.mod_data.last().unwrap();
-        index = last_mod.index + last_mod.name.len();
+        index = last_inner_item.index;
+
+        if last_inner_item.mod_data.len() > 0 {
+            let last_mod: &Mod = last_inner_item.mod_data.last().unwrap();
+            index = last_mod.index + last_mod.name.len();
+        }
+
+        // fix the index by offset.
         index += 75;
 
         if is_debugging {
@@ -889,17 +872,35 @@ fn get_sgd_matches(content: &[u8], start_index: usize) -> (Vec<String>, Vec<usiz
     // Defines the regex instance.
     let re: Regex = Regex::new(pattern).unwrap();
     let mut match_iter = re.find_iter(&string_data);
+    let savegame_re: Regex = Regex::new("Savegame").expect("Invalid regex pattern.");
+    let is_savegame_match: bool = savegame_re.is_match(&string_data);
+
     let mut curr_index = start_index;
+    let mut found_first_sgd = false;
 
     // iterate through each match.
     while let Some(mat) = match_iter.next() {
         // Looking for all SGDs inside the current chunk.
         if mat.as_str() == "SGDs" {
+            // Check if the first SGD is found.
+            if !found_first_sgd {
+                found_first_sgd = true;
+            }
+
             let tmp_match_value = mat.as_str().to_string();
             let match_index = get_index_from_sequence(content, &curr_index, tmp_match_value.as_bytes(), true);
             
             curr_index = match_index + 4;
             match_values.push(tmp_match_value);
+        } else if !found_first_sgd{
+            // Check if Savegame indicator is between
+            if is_savegame_match {
+                if let Some(savegame) = savegame_re.find(&string_data) {
+                    if savegame.start() < mat.start() {
+                        break;
+                    }
+                }
+            }
         } else {
             break;
         }
@@ -951,159 +952,82 @@ fn is_savegame_between(content: &[u8], start_index: usize, end_index: usize) -> 
 /// A tuple that contains the matches for the current chunk and their corresponding index.
 fn find_amount_of_matches(content: &[u8], start_index: usize, amount: usize, logger: &mut ConsoleLogger, is_debugging: bool) -> (Vec<String>, Vec<usize>) {
     // Prepare data.
-    let mut counter: usize = 0;
-    let mut mod_counter: i32 = 0;
-    let mut iteration_index: usize = start_index;
+    let mut item_counter: usize = 0;
     let mut match_values: Vec<String> = Vec::new();
     let mut match_indices: Vec<usize> = Vec::new();
+    let mut iteration_index: usize = start_index;
+    let mut last_match: String = String::new();
     // Convert the byte data to string to check regex patterns.
     let string_data = String::from_utf8_lossy(&content[start_index..]);
 
     // The Regex pattern to match the sgds.
-    let pattern: &str = r"(?:[a-zA-Z0-9_]{4,}(?:\x00*))*SGDs";
+    // let pattern: &str = r"(?:[a-zA-Z0-9_]{4,}(?:\x00*))*SGDs";
+    let pattern: &str = r"(?:[a-zA-Z0-9_]{4,}_[a-zA-Z0-9_]*(?:\x00*))*SGDs";
 
     // Defines the regex instances.
     let re: Regex = Regex::new(pattern).expect("Invalid regex pattern.");
-    let savegame_re: Regex = Regex::new("Savegame").expect("Invalid regex pattern.");
-    let is_savegame_match: bool = savegame_re.is_match(&string_data);
 
     for mat in re.find_iter(&string_data) {
         // There are mod slots for each item. Even tokens, I mean why not Techland, right?
         // Check if the amount of item matches is in range and if the length of the match is at least 4.
-        if counter <= amount && mat.as_str().len() >= 4 {
+        if item_counter < amount && mat.as_str().len() > 4 && mat.as_str().contains("_") {
             // set set the current item id.
-            let tmp_matching_value = mat.as_str().to_string();
-            if tmp_matching_value == "wpn_2hp_bow_t5SGDs" {
-                println!("SGDs found");
+            let mut current_matching_value = mat.as_str().to_string();
+            let index = get_index_from_sequence(content, &iteration_index, &current_matching_value.as_bytes(), true);
+            // Check if the current SGD is valid
+            let size_bytes = &content[index - 2..index].to_vec();
+            let size = u16::from_le_bytes(size_bytes.clone().try_into().unwrap()) as usize;
+
+            // Checks if the SGDs has the correct size or if the item has a space between the name and the SGDs.
+            if size > 0 {
+                if !current_matching_value.clone().ends_with("SGDs") && size > current_matching_value.clone().len() {
+                    // Include spaces between item name and SGDs
+                    current_matching_value = String::from_utf8_lossy(&content[index..index + size + 4]).to_string();
+                }
+            } else {
+                continue;
             }
-
-            let index = get_index_from_sequence(content, &iteration_index, &tmp_matching_value.as_bytes(), true);
             
-            // Check if it is an item or a mod.
-            if !mat.as_str().contains("Mod") && !mat.as_str().contains("charm") &&
-                mat.as_str() != "NoneSGDs" && mat.as_str() != "SGDs" && !mat.as_str().contains("Pursuit") {
-
-                    // Check if the bullet acts as item or mod.
-                    if (mat.as_str().contains("Bullet") || mat.as_str().contains("Craftplan")) && mod_counter > 0 && mod_counter <= 4 {                        
-                        // Check if the current SGD is valid
-                        let size_bytes = &content[index - 2..index].to_vec();
-                        let size = u16::from_le_bytes(size_bytes.clone().try_into().unwrap()) as usize;
-
-                        // Compares if the SGDs have the correct size
-                        if size > 0 {
-                            if tmp_matching_value.clone().ends_with("SGDs") && size + 4 == tmp_matching_value.clone().len() {
-                                if is_debugging {
-                                    logger.log_message(&format!("Found potential SGDs match: [{}]", mat.as_str()), Vec::new());
-                                }
-                                match_values.push(tmp_matching_value.clone());
-                                match_indices.push(index);
-                                iteration_index = index + tmp_matching_value.len();
-                                mod_counter += 1;
-                            } else if !tmp_matching_value.clone().ends_with("SGDs") && size > tmp_matching_value.clone().len() {
-                                // Include spaces between item name and SGDs
-                                let longer_match_value = String::from_utf8_lossy(&content[index..index + size + 4]);
-
-                                if longer_match_value.ends_with("SGDs") {
-                                    if is_debugging {
-                                        logger.log_message(&format!("Found potential SGDs match: [{}]", mat.as_str()), Vec::new());
-                                    }
-
-                                    match_values.push(longer_match_value.to_string());
-                                    match_indices.push(index);
-                                    iteration_index = index + longer_match_value.len();
-                                    mod_counter += 1;
-                                } else {
-                                    continue;
-                                }
-                            }
-                        } else {
-                            continue;
-                        }
-
-                        continue;
-                    }
-
-                    // update data.
-                    counter += 1;
-                    mod_counter = 0;
-
+            // Checks whether the match is an item or a mod.
+            if !mat.as_str().contains("Mod") && !mat.as_str().contains("charm") {
+                // Checks whether the match is bullet that acts as a mod.
+                if (mat.as_str().contains("Bullet") || mat.as_str().contains("Craftplan")) && 
+                (last_match.contains("bow") || last_match.contains("firearm") || last_match.contains("gun")) {                        
                     if is_debugging {
-                        logger.log_message_no_linebreak("Found potential SGDs match for item: ", Vec::new());
-                        logger.log_message(&format!("[{}]", mat.as_str()), vec![term::Attr::ForegroundColor(term::color::CYAN)]);
-                    }
-                } 
-                // Checks if the SGDs is at the end of the found list and not in the middle.
-                // For example weapons have 3 NoneSGDs(Mods) then 4 SGDs and then multiple NoneSGDs(Mods).
-                else if mat.as_str() == "SGDs" && mod_counter != 4 {
-                    break;
-                } 
-                // Checks if the match equals SGDs, since it is also possible for weapon mods.
-                else if mat.as_str() == "SGDs" || mat.as_str() == "PursuitSGDs" {
-                    // Check if Savegame indicator is between
-                    if is_savegame_match {
-                        if let Some(savegame) = savegame_re.find(&string_data) {
-                            if savegame.start() < mat.start() {
-                                break;
-                            }
-                        }
-                    }
-
-                    // TODO Check if the current match counts as mod or is actually an SGDs chunk.
-                    // Default space between the ID varies. But the delta between each SGDs chunk is at least 75
-                    if match_values.len() > 0 {
-                        let delta = index - iteration_index;
-
-                        if delta > 75 {
-                            break;
-                        }
-                    }
-
-                    match_values.push(mat.as_str().to_string());
-                    match_indices.push(index);
-                    iteration_index = index + mat.as_str().len();
-                    if is_debugging && mod_counter > 0 {
                         logger.log_message(&format!("Found potential SGDs match for mod: [{}]", mat.as_str()), Vec::new());
                     }
 
+                    match_values.push(current_matching_value.clone());
+                    match_indices.push(index);
+                    last_match = current_matching_value;
+                    iteration_index = index + last_match.len();
+
                     continue;
                 }
 
-                let size_bytes = &content[index - 2..index].to_vec();
-                let size = u16::from_le_bytes(size_bytes.clone().try_into().unwrap()) as usize;
+                // update data.
+                item_counter += 1;
+                match_values.push(current_matching_value.clone());
+                match_indices.push(index);
+                last_match = current_matching_value;
+                iteration_index = index + last_match.len();
 
-                // Compares if the SGDs have the correct size
-                if size > 0 {
-                    if tmp_matching_value.clone().ends_with("SGDs") && size + 4 == tmp_matching_value.clone().len() {
-                        if is_debugging && mod_counter > 0 {
-                            logger.log_message(&format!("Found potential SGDs match for mod: [{}]", tmp_matching_value.clone()), Vec::new());
-                        }
-
-                        match_values.push(tmp_matching_value.clone());
-                        match_indices.push(index);
-                        iteration_index = index + tmp_matching_value.len();
-                        mod_counter += 1;
-                    } else if !tmp_matching_value.clone().ends_with("SGDs") && size > tmp_matching_value.clone().len() {
-                        // Include spaces between item name and SGDs
-                        let longer_match_value = String::from_utf8_lossy(&content[index..index + size + 4]);
-
-                        if longer_match_value.ends_with("SGDs") {
-                            if is_debugging && mod_counter > 0 {
-                                logger.log_message(&format!("Found potential SGDs match for mod: [{}]", longer_match_value.to_string()), Vec::new());
-                            }
-
-                            match_values.push(longer_match_value.to_string());
-                            match_indices.push(index);
-                            iteration_index = index + longer_match_value.len();
-                            mod_counter += 1;
-                        } else {
-                            continue;
-                        }
-                    }
-                } else {
-                    continue;
+                if is_debugging {
+                    logger.log_message_no_linebreak("Found potential SGDs match for item: ", Vec::new());
+                    logger.log_message(&format!("[{}]", mat.as_str()), vec![term::Attr::ForegroundColor(term::color::CYAN)]);
                 }
-        } else {
-            break;
+
+                continue;
+            } else {
+                if is_debugging {
+                    logger.log_message(&format!("Found potential SGDs match for mod: [{}]", mat.as_str()), Vec::new());
+                }
+
+                match_values.push(current_matching_value.clone());
+                match_indices.push(index);
+                last_match = current_matching_value;
+                iteration_index = index + last_match.len();
+            }
         }
     }
 
