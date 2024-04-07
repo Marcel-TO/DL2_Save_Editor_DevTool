@@ -5,7 +5,6 @@
 //! - Unlockable items (craftplans, toolskins, consumables)
 //! - Inventory items (weapons, gear, accesssories, etc)
 
-use std::fmt::format;
 use std::io::Write;
 use std::{fs, io::Read};
 use std::error::Error;
@@ -52,6 +51,7 @@ static START_INVENTORY: [u8; 15] = [
 /// ### Parameter
 /// - `file_path`: The filepath of the current selected save.
 /// - `file_content`: The content of the current file.
+/// - `logger`: The console logger that logs every event.
 /// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `SaveFile`
@@ -154,6 +154,7 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>, logger: &mut Conso
 /// ### Parameter
 /// - `file_path`: The filepath of the current selected save.
 /// - `file_content`: The content of the current file.
+/// - `logger`: The console logger that logs every event.
 /// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `SaveFile`
@@ -283,9 +284,19 @@ pub fn edit_inventory_item_chunk(
     save_file_content = replace_content_of_file(current_item_index, zero_bytes, save_file_content);
     save_file_content = replace_content_of_file(current_item_index, new_id_bytes, save_file_content);
 
+    // Returns content
     save_file_content
 }
 
+/// Represents a method for editing the durability for all items in a section at once.
+/// 
+/// ### Parameter
+/// - `item_chunks`: The list of all item chunks.
+/// - `value`: The new durability value.
+/// - `save_file_content`: The content of the save file.
+/// 
+/// ### Returns `(Vec<InventoryChunk>, Vec<u8>)`
+/// The new content of the save file and all changed item chunks.
 pub fn change_items_durability(
     item_chunks: Vec<InventoryChunk>,
     value: f32,
@@ -313,6 +324,15 @@ pub fn change_items_durability(
     (new_item_chunks, save_file_content)
 }
 
+/// Represents a method for editing the amount for all items in a section at once.
+/// 
+/// ### Parameter
+/// - `item_chunks`: The list of all item chunks.
+/// - `value`: The new amount value.
+/// - `save_file_content`: The content of the save file.
+/// 
+/// ### Returns `(Vec<InventoryChunk>, Vec<u8>)`
+/// The new content of the save file and all changed item chunks.
 pub fn change_items_amount(
     item_chunks: Vec<InventoryChunk>,
     value: u32,
@@ -340,6 +360,16 @@ pub fn change_items_amount(
     (new_item_chunks, save_file_content)
 }
 
+/// Represents a method for removing an item from the inventory.
+/// 
+/// ### Parameter
+/// - `start_index`: The starting index of the removed item.
+/// - `end_index`: The ending index of the removed item.
+/// - `chunk_index`: The chunk index of the removed item.
+/// - `save_file_content`: The content of the save file.
+/// 
+/// ### Returns `Vec<u8>`
+/// The new content of the save file.
 pub fn remove_inventory_item(
     mut start_index: usize,
     end_index: usize,
@@ -435,9 +465,10 @@ fn find_legend_skill_matches(content: &[u8]) -> Vec<String> {
 /// - `data`: The needed byte data of the current save.
 /// - `base_matches`: All base skill names that match the skill pattern.
 /// - `legend_matches`: All legend skill names that match the skill pattern.
+/// - `logger`: The console logger that logs every event.
 /// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
-/// ### Returns `Skills`
+/// ### Returns `Result<Skills>`
 /// All matching skills.
 fn analize_skill_data(
     data: &[u8],
@@ -516,9 +547,10 @@ fn analize_skill_data(
 /// 
 /// ### Parameter
 /// - `content`: The byte data of the save.
+/// - `logger`: The console logger that logs every event.
 /// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
-/// ### Returns `Vec<UnlockableItem>`
+/// ### Returns `Result<Vec<UnlockableItem>>`
 /// All unlockable items inside the inventory.
 fn analize_unlockable_items_data(content: &[u8], logger: &mut ConsoleLogger, is_debugging: bool) -> Result<Vec<UnlockableItem>> {    
     // Finds all inventory sequences inside the file.
@@ -586,12 +618,13 @@ fn analize_unlockable_items_data(content: &[u8], logger: &mut ConsoleLogger, is_
 /// ### Parameter
 /// - `unlockable_items`: The unlockable items.
 /// - `file_content`: The byte data of the save.
+/// - `logger`: The console logger that logs every event.
+/// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `usize`
 /// The index from where the inventory items continue.
 fn get_index_for_inventory_items(unlockable_items: &[UnlockableItem], file_content: &[u8], logger: &mut ConsoleLogger, is_debugging: bool) -> Result<usize> {
     let start_index: usize = unlockable_items[0].index + unlockable_items[0].size;
-    let string_content = String::from_utf8_lossy(&file_content[start_index..]);
 
     let sgd_position = get_index_from_sequence(&file_content[start_index..], &0, &[0, 83, 71, 68, 115], true);
     
@@ -623,6 +656,8 @@ fn get_index_for_inventory_items(unlockable_items: &[UnlockableItem], file_conte
 /// ### Parameter
 /// - `content`: The byte data of the current selected save.
 /// - `start_index`: The start index of the inventory data.
+/// - `logger`: The console logger that logs every event.
+/// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `Vec<Vec<InventoryItem>>`
 /// The list of all different item sections.
@@ -758,12 +793,20 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
         if is_debugging {
             logger.log_message(&format!("Used the index of from the last mod and added the +75 to the offset for the next item: [{}]", index), Vec::new());
             logger.log_break();
+            logger.wait_for_input();
         }
     }
 
     Ok(items)
 }
 
+/// Represents the method for matching the item of each section to its dedicated row.
+/// 
+/// ### Parameter
+/// - `items`: The item of a specific section.
+/// 
+/// ### Returns `InventoryItemRow`
+/// A specific itemrow with name and items inside.
 fn create_item_row(items: Vec<InventoryItem>) -> InventoryItemRow {
     for item in items.iter() {
         if item.name.contains("Token") || item.name.contains("Ticket") {
@@ -800,8 +843,10 @@ fn create_item_row(items: Vec<InventoryItem>) -> InventoryItemRow {
 /// ### Parameter
 /// - `content`: The byte data of the current save file.
 /// - `start_index`: The starting index on where the search begins.
+/// - `logger`: The console logger that logs every event.
+/// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
-/// ### Returns `(Vec<InventoryItem>, usize)`
+/// ### Returns `Result<(Vec<InventoryItem>, usize)>`
 /// The array of all found chunks inside the inventory and the last position to increase further performance.
 fn find_all_inventory_chunks(content: &[u8], start_index: usize, logger: &mut ConsoleLogger, is_debugging: bool) -> Result<(Vec<InventoryChunk>, usize)> {
     // Checks if the index is out of range.
@@ -871,24 +916,49 @@ fn find_all_inventory_chunks(content: &[u8], start_index: usize, logger: &mut Co
     }
 }
 
+/// Represents a method for finding the first sgd chunk after a completed itemrow.
+/// 
+/// ### Parameter
+/// - `content`: The byte data of the current save file.
+/// - `start_index`: The starting index on where the search begins.
+/// 
+/// ### Returns `Result<usize>`
+/// The index of the first sgd chunk after a completed itemrow.
 fn find_first_sgd_index(content: &[u8], start_index: usize) -> Result<usize> {
     let sgd: [u8; 5] = [0, 83, 71, 68, 115]; // SGDs and the 0 byte in front of it.
     let zero_bytes: Vec<u8> = vec![0; 2];
-    let match_index = get_index_from_sequence(content, &start_index, &sgd, true);
-    let is_savegame_between = is_savegame_between(content, start_index, match_index);
+    let mut curr_index: usize = start_index;
 
-    let sgds_indicator = content[match_index - 5.. match_index - 3].to_vec();
+    // Iterates through matches, since weapons can contain invalid SGDs too.
+    loop {
+        // Find SGDs.
+        let match_index = get_index_from_sequence(content, &curr_index, &sgd, true);
         
-    if sgds_indicator != zero_bytes {
-        // Check if Savegame indicator is between
-        if is_savegame_between {
-            return Ok(0);
+        // Check if match did not work.
+        if match_index == 0 {
+            break;
+        }
+        
+        // Check whether savegame is between the start index and the match index.
+        let is_savegame_between = is_savegame_between(content, start_index, match_index);
+        // Get the values in front of the match.
+        let sgds_indicator = content[match_index - 5.. match_index - 3].to_vec();
+        // Validate whether the SGDs is valid or not.
+        if sgds_indicator != zero_bytes {
+            // Check if Savegame indicator is between
+            if is_savegame_between {
+                return Ok(0);
+            }
+    
+            return Ok(match_index);
         }
 
-        return Ok(match_index);
-    } else {
-        return Err("No SGDs found.".into());
+        // Didn't find a correct SGDs chunk. Might be an SGDs chunk inside a weapon. So we increase the current index and continue.
+        curr_index = match_index + 4;
     }
+    
+
+    return Err("No SGDs found.".into());
 }
 
 /// Represents a method for finding all sgd matches inside the range.
@@ -945,6 +1015,15 @@ fn get_sgd_matches(content: &[u8], start_index: usize) -> (Vec<String>, Vec<usiz
     (match_values, match_indices)
 }
 
+/// Represents a method for checking whether the savegame indicator is between the start and the end index.
+/// 
+/// ### Parameter
+/// - `content`: The byte data of the current save.
+/// - `start_index`: The index from where the search starts.
+/// - `end_index`: The index from where the search ends.
+/// 
+/// ### Returns `bool`
+/// Indicates whether the savegame indicator is between the start and the end index or not.
 fn is_savegame_between(content: &[u8], start_index: usize, end_index: usize) -> bool {
     if start_index > end_index {
         return true;
@@ -966,6 +1045,8 @@ fn is_savegame_between(content: &[u8], start_index: usize, end_index: usize) -> 
 /// - `content`: The byte data of the inventory.
 /// - `start_index`: The start index of the search.
 /// - `amount`: The amount of chunks found for the current section. 
+/// - `logger`: The console logger that logs every event.
+/// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `(Vec<String>, Vec<usize>)`
 /// A tuple that contains the matches for the current chunk and their corresponding index.
