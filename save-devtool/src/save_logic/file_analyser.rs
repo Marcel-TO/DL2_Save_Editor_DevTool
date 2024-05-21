@@ -23,8 +23,10 @@ use crate::save_logic::struct_data::{
     InventoryItem,
     InventoryItemRow,
     InventoryChunk,
-    Mod,
+    IdData,
 };
+
+use super::struct_data::Mod;
 
 // Define global result definition for easier readability.
 type Result<T> = std::result::Result<T,Box<dyn Error>>;
@@ -51,12 +53,19 @@ static START_INVENTORY: [u8; 15] = [
 /// ### Parameter
 /// - `file_path`: The filepath of the current selected save.
 /// - `file_content`: The content of the current file.
+/// - `ids`: The list of all IDs.
 /// - `logger`: The console logger that logs every event.
 /// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `SaveFile`
 /// The save file with all collected data.
-pub fn load_save_file(file_path: &str, file_content: Vec<u8>, logger: &mut ConsoleLogger, is_debugging: bool) -> Result<SaveFile> {   
+pub fn load_save_file(
+    file_path: &str,
+    file_content: Vec<u8>,
+    ids: Vec<IdData>,
+    logger: &mut ConsoleLogger,
+    is_debugging: bool
+) -> Result<SaveFile> {   
     // Gets the indices of the skill data.
     let skill_start_index: usize = get_index_from_sequence(&file_content, &0, &START_SKILLS, true);
     let skill_end_index: usize = get_index_from_sequence(&file_content, &skill_start_index, &END_SKILLS, true);
@@ -125,7 +134,7 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>, logger: &mut Conso
     let index_inventory_items: usize = index_inventory_items_result.unwrap();
 
     // Get all items within the inventory.
-    let items_result: Result<Vec<InventoryItemRow>> = get_all_items(&file_content, index_inventory_items, logger, is_debugging);
+    let items_result: Result<Vec<InventoryItemRow>> = get_all_items(&file_content, index_inventory_items, ids, logger, is_debugging);
 
     // Check if the editor did not manage to validate the unlockables.
     match &items_result {
@@ -146,6 +155,7 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>, logger: &mut Conso
         skills.unwrap().clone(),
         unlockable_items,
         items_result?,
+        logger.log_histroy.clone()
     ))
 }
 
@@ -153,20 +163,27 @@ pub fn load_save_file(file_path: &str, file_content: Vec<u8>, logger: &mut Conso
 /// 
 /// ### Parameter
 /// - `file_path`: The filepath of the current selected save.
-/// - `file_content`: The content of the current file.
+/// - `compressed`: The compressed content of the current file.
+/// - `ids`: The list of all IDs.
 /// - `logger`: The console logger that logs every event.
 /// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `SaveFile`
 /// The save file with all collected data.
-pub fn load_save_file_pc(file_path: &str, compressed: Vec<u8>, logger: &mut ConsoleLogger, is_debugging: bool) -> Result<SaveFile> {
+pub fn load_save_file_pc(
+    file_path: &str,
+    compressed: Vec<u8>,
+    ids: Vec<IdData>,
+    logger: &mut ConsoleLogger,
+    is_debugging: bool
+) -> Result<SaveFile> {
     let mut gz = GzDecoder::new(&compressed[..]);
     let mut file_content = Vec::new();
     if let Err(error) = gz.read_to_end(&mut file_content) {
         return Err(format!("{} -> Make sure that the file you want to decompress is actually compressed.", error.to_string()).into());
     }
 
-    load_save_file(file_path, file_content, logger, is_debugging)
+    load_save_file(file_path, file_content, ids, logger, is_debugging)
 }
 
 /// Represents a method for exporting the save for PC (compressing).
@@ -231,7 +248,8 @@ pub fn edit_skill(
         replace_content_of_file(&new_skill.index + &new_skill.size, new_skill.points_data.clone(), save_file.file_content),
         save_file.skills,
         save_file.unlockable_items,
-        save_file.items
+        save_file.items,
+        save_file.log_history.clone()
     );
 
     // Changes the current skill to the new one.
@@ -656,13 +674,20 @@ fn get_index_for_inventory_items(unlockable_items: &[UnlockableItem], file_conte
 /// ### Parameter
 /// - `content`: The byte data of the current selected save.
 /// - `start_index`: The start index of the inventory data.
+/// - `ids`: The list of all IDs.
 /// - `logger`: The console logger that logs every event.
 /// - `is_debugging`: Indicates whether the file analyser is in debugging mode or not.
 /// 
 /// ### Returns `Vec<Vec<InventoryItem>>`
 /// The list of all different item sections.
 /// Each section contains a list of items, for example: gear, weapons, etc....
-fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger, is_debugging: bool) -> Result<Vec<InventoryItemRow>> {
+fn get_all_items(
+    content: &[u8],
+    start_index: usize,
+    ids: Vec<IdData>,
+    logger: &mut ConsoleLogger,
+    is_debugging: bool
+) -> Result<Vec<InventoryItemRow>> {
     // Prepare data.
     let mut items: Vec<InventoryItemRow> = Vec::new();
     let mut index: usize = start_index;
@@ -703,10 +728,9 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
         // iterate through each found match and validate the position of the match.
         for i in 0..current_item_ids.len() {
             // Check if the match is an item or a mod.
-            if !&current_item_ids[i].to_lowercase().contains("mod") && !&current_item_ids[i].to_lowercase().contains("charm") {
+            if validate_item_or_mod(&current_item_ids[i]) {
                 // Check if the bullet acts as item or mod or if there is a transmog item.
-                if (current_item_ids[i].to_lowercase().contains("bullet") || current_item_ids[i].to_lowercase().contains("craftplan")) &&
-                    (current_item_id.to_lowercase().contains("bow") || (current_item_id.to_lowercase().contains("firearm") && !current_item_id.to_lowercase().contains("bullet")) || current_item_id.to_lowercase().contains("gun") || current_item_id.to_lowercase().contains("harpoon")) {
+                if validate_item_or_transmog(&current_item_ids[i], &current_item_id) {
                     if is_debugging {
                         logger.log_message(&format!("Since this item can be item and mod, the editor validated it as a mod: [{}]", current_item_ids[i].to_string()), Vec::new());
                     }
@@ -777,7 +801,7 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
         }
 
         // Add the inner section to the item list.
-        let item_row = create_item_row(inner_item_list.clone());
+        let item_row = create_item_row(inner_item_list.clone(), ids.clone());
         items.push(item_row);
         let last_inner_item: &InventoryItem = &inner_item_list.last().unwrap();
         index = last_inner_item.index;
@@ -800,39 +824,121 @@ fn get_all_items(content: &[u8], start_index: usize, logger: &mut ConsoleLogger,
     Ok(items)
 }
 
+fn validate_item_or_mod(current_match: &str) -> bool {
+    if !current_match.to_lowercase().contains("mod") && !current_match.to_lowercase().contains("charm") {
+        return true
+    }
+
+    false
+}
+
+fn validate_item_or_transmog(current_match: &str, last_match: &str) -> bool {
+    if (current_match.to_lowercase().contains("bullet") || current_match.to_lowercase().contains("craftplan")) &&
+    (last_match.to_lowercase().contains("bow") || (last_match.to_lowercase().contains("firearm") && !last_match.to_lowercase().contains("bullet")) || last_match.to_lowercase().contains("gun") || last_match.to_lowercase().contains("harpoon")) {
+        return true
+    }
+
+    false
+}
+
 /// Represents the method for matching the item of each section to its dedicated row.
 /// 
 /// ### Parameter
 /// - `items`: The item of a specific section.
+/// - `ids`: The list of all IDs.
 /// 
 /// ### Returns `InventoryItemRow`
 /// A specific itemrow with name and items inside.
-fn create_item_row(items: Vec<InventoryItem>) -> InventoryItemRow {
+fn create_item_row(items: Vec<InventoryItem>, ids: Vec<IdData>) -> InventoryItemRow {
+    let mut tab_tokens = 0;
+    let mut tab_equipment = 0;
+    let mut tab_craftresources = 0;
+    let mut tab_consumables = 0;
+    let mut tab_accessories = 0;
+    let mut tab_quest = 0;
+    let mut tab_ammunition = 0;
+    let mut tab_weapons = 0;
+    let mut tab_item = 0;
+
     for item in items.iter() {
-        if item.name.contains("Token") || item.name.contains("Ticket") {
-            return InventoryItemRow::new("Tokens/Tickets".to_string(), items);
+        let mut is_matched = false;
+        for id_section in ids.iter() {
+            if is_matched {
+                break;
+            }
+
+            for id_name in id_section.ids.iter() {
+                if is_matched {
+                    break;
+                }
+
+                if item.name.contains(id_name) {
+                    match id_section.filename.to_lowercase().as_str() {
+                        "ammo" => tab_ammunition += 1,
+                        "cash" => tab_item += 1,
+                        "collectable" => tab_item += 1,
+                        "craftcomponent" => tab_craftresources += 1,
+                        "craftpart" => tab_craftresources += 1,
+                        "equipment" => tab_equipment += 1,
+                        "evolvingitem" => tab_item += 1,
+                        "firearm" => tab_weapons += 1,
+                        "flashlight" => tab_accessories += 1,
+                        "inventoryitem" => tab_accessories += 1,
+                        "itembundle" => tab_item += 1,
+                        "lockpick" => tab_equipment += 1,
+                        "lootpack" => tab_craftresources += 1,
+                        "medkit" => tab_consumables += 1,
+                        "melee" => tab_weapons += 1,
+                        "other" => tab_quest += 1,
+                        "outfitpart" => tab_craftresources += 1,
+                        "powerup" => tab_consumables += 1,
+                        "survivorpack" => tab_item += 1,
+                        "syringeantizin" => tab_consumables += 1,
+                        "throwable" => tab_accessories += 1,
+                        "throwableliquid" => tab_accessories += 1,
+                        "token" => tab_tokens += 1,
+                        "uncategorized" => tab_item += 1,
+                        "valuable" => tab_craftresources += 1,
+                        "vehicleupgrade" => tab_item += 1,
+                        "voucher" => tab_item += 1,
+                        _ => tab_item += 1
+                    }
+
+                    is_matched = true;
+                    break;
+                }
+            }
         }
-        else if item.name.contains("Keyfinder") || item.name.contains("Binoculars") {
-            return InventoryItemRow::new("Equipment".to_string(), items);
-        }
-        else if item.name.contains("Outfit") || item.name.contains("Craft") || item.name.contains("Plant") {
-            return InventoryItemRow::new("Outfits/Craftresources".to_string(), items);
-        }
-        else if item.name.contains("Potion") || item.name.contains("Booster")  || item.name.contains("Medkit") || item.name.contains("Flare") {
-            return InventoryItemRow::new("Consumables".to_string(), items);
-        }
-        else if item.name.contains("KaDoom") || item.name.contains("Broom") || item.name.contains("Throwable") || (item.name.contains("wpn") && item.name.contains("challenge")) {
-            return InventoryItemRow::new("Accessories".to_string(), items);
-        }
-        else if item.name.contains("Quest") {
-            return InventoryItemRow::new("Quest Items".to_string(), items);
-        }
-        else if item.name.contains("Bullet") {
-            return InventoryItemRow::new("Ammunition".to_string(), items);
-        }
-        else if item.name.contains("wpn") && !item.name.contains("challenge") {
-            return InventoryItemRow::new("Weapons".to_string(), items);
-        }
+    }
+
+    // Initialize the counters
+    let counters = vec![
+        tab_tokens, tab_equipment, tab_craftresources, tab_consumables,
+        tab_accessories, tab_quest, tab_ammunition, tab_weapons, tab_item
+    ];
+
+    // Find the maximum value among the counters
+    let highest_counter = counters.iter().max().unwrap();
+
+    // Perform actions based on the highest counter
+    if highest_counter == &tab_tokens {
+        return InventoryItemRow::new("Tokens/Tickets".to_string(), items);
+    } else if highest_counter == &tab_equipment {
+        return InventoryItemRow::new("Equipment".to_string(), items);
+    } else if highest_counter == &tab_craftresources {
+        return InventoryItemRow::new("Outfits/Craftresources".to_string(), items);
+    } else if highest_counter == &tab_consumables {
+        return InventoryItemRow::new("Consumables".to_string(), items);
+    } else if highest_counter == &tab_accessories {
+        return InventoryItemRow::new("Accessories".to_string(), items);
+    } else if highest_counter == &tab_quest {
+        return InventoryItemRow::new("Quest Items".to_string(), items);
+    } else if highest_counter == &tab_ammunition {
+        return InventoryItemRow::new("Ammunition".to_string(), items);
+    } else if highest_counter == &tab_weapons {
+        return InventoryItemRow::new("Weapons".to_string(), items);
+    } else if highest_counter == &tab_item {
+        return InventoryItemRow::new("Items".to_string(), items)
     }
 
     InventoryItemRow::new("Items".to_string(), items)
@@ -1104,10 +1210,9 @@ fn find_amount_of_matches(content: &[u8], start_index: usize, amount: usize, log
                 }
                 
                 // Checks whether the match is an item or a mod.
-                if !mat.as_str().to_lowercase().contains("mod") && !mat.as_str().to_lowercase().contains("charm") {
+                if validate_item_or_mod(mat.as_str()) {
                     // Checks whether the match is bullet that acts as a mod.
-                    if (mat.as_str().to_lowercase().contains("bullet") || mat.as_str().to_lowercase().contains("craftplan")) && 
-                    (last_match.to_lowercase().contains("bow") || (last_match.to_lowercase().contains("firearm") && !last_match.to_lowercase().contains("bullet")) || last_match.to_lowercase().contains("gun") || last_match.to_lowercase().contains("harpoon")) {                        
+                    if validate_item_or_transmog(mat.as_str(), &last_match) {                
                         if is_debugging {
                             logger.log_message(&format!("Found potential SGDs match for mod: [{}]", mat.as_str()), Vec::new());
                         }

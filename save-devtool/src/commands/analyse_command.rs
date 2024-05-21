@@ -13,7 +13,8 @@ use crate::commands::command_functions::CommandFunctions;
 use crate::commands::*;
 use crate::logger::{ConsoleLogger, LoggerFunctions};
 use crate::save_logic::file_analyser::{get_contents_from_file, load_save_file, load_save_file_pc};
-use crate::save_logic::struct_data::SaveFile;
+use crate::save_logic::struct_data::{IdData, SaveFile};
+use crate::save_logic::id_fetcher::fetch_ids;
 
 // Define global result definition for easier readability.
 type Result<T> = std::result::Result<T,Box<dyn Error>>;
@@ -185,12 +186,13 @@ impl AnalyseSaveCommand {
 
 fn analyse_save(command: &mut AnalyseSaveCommand, logger: &mut ConsoleLogger) {
     let file_content: Vec<u8> = get_contents_from_file(&command.selected_path).unwrap();
+    let ids = fetch_ids(&"C:/Users/MarcelTurobin-Ort/Github/_Privat/DL2_Save_Editor_DevTool/save-devtool/IDs".to_string()).unwrap();
     let save_file: Result<SaveFile>;
     
     if command.is_decompressing {
-        save_file = load_save_file_pc(&command.selected_path, file_content, logger, command.is_debugging);
+        save_file = load_save_file_pc(&command.selected_path, file_content, ids, logger, command.is_debugging);
     } else {
-        save_file = load_save_file(&command.selected_path, file_content, logger, command.is_debugging);
+        save_file = load_save_file(&command.selected_path, file_content, ids, logger, command.is_debugging);
     }
     
     logger.log_break();
