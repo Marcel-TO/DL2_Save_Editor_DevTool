@@ -188,7 +188,7 @@ impl AnalyseSaveCommand {
 fn analyse_save(command: &mut AnalyseSaveCommand, logger: &mut ConsoleLogger) {
     let file_content: Vec<u8> = get_contents_from_file(&command.selected_path).unwrap();
     let crc = crc64_we(&file_content);
-    let message = format!("The crc for the file is currently: {}", crc.to_le_bytes());
+    let message = format!("The crc for the file is currently: {:02X?}", crc);
     logger.log_message(message.as_str(), Vec::new());
     let ids = fetch_ids(&"C:/Users/MarcelTurobin-Ort/Github/_Privat/DL2_Save_Editor_DevTool/save-devtool/IDs".to_string()).unwrap();
     let save_file: Result<SaveFile>;

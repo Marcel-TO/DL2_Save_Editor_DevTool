@@ -69,9 +69,9 @@ pub fn crc64_we(data: &[u8]) -> u64 {
     let mut crc: u64 = 0xffff_ffff_ffff_ffff;
 
     for byte in data.iter() {
-        let idx = ((crc >> 56) ^ (*byte as u64)) & 0xff;
-        crc = CRC64_TABLE[idx as usize] ^ (crc << 8);
+        let idx = ((crc & 0xff) ^ (*byte as u64)) & 0xff;
+        crc = CRC64_TABLE[idx as usize] ^ (crc >> 8);
     }
 
-    !crc
+    crc ^ 0xffff_ffff_ffff_ffff
 }
