@@ -12,6 +12,7 @@ use crate::arguments::*;
 use crate::commands::command_functions::CommandFunctions;
 use crate::commands::*;
 use crate::logger::{ConsoleLogger, LoggerFunctions};
+use crate::save_logic::crc_checker::crc64_we;
 use crate::save_logic::file_analyser::{get_contents_from_file, load_save_file, load_save_file_pc};
 use crate::save_logic::struct_data::{IdData, SaveFile};
 use crate::save_logic::id_fetcher::fetch_ids;
@@ -186,6 +187,9 @@ impl AnalyseSaveCommand {
 
 fn analyse_save(command: &mut AnalyseSaveCommand, logger: &mut ConsoleLogger) {
     let file_content: Vec<u8> = get_contents_from_file(&command.selected_path).unwrap();
+    let crc = crc64_we(&file_content);
+    let message = format!("The crc for the file is currently: {:02X?}", crc);
+    logger.log_message(message.as_str(), Vec::new());
     let ids = fetch_ids(&"C:/Users/MarcelTurobin-Ort/Github/_Privat/DL2_Save_Editor_DevTool/save-devtool/IDs".to_string()).unwrap();
     let save_file: Result<SaveFile>;
     
@@ -214,4 +218,8 @@ fn analyse_save(command: &mut AnalyseSaveCommand, logger: &mut ConsoleLogger) {
             logger.log_error("Please use the debug function for more detailed steps.");
         }
     }
+}
+
+fn u64_to_u8_array(value: u64) -> [u8; 8] {
+    value.to_le_bytes() // or use `value.to_be_bytes()` for big-endian order
 }

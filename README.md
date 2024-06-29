@@ -39,6 +39,8 @@ analyse-save --help
 ```
 > Returns the information for the command with all arguments and explanations.
 
+## No Implemented Yet!
+
 ### Find item | `find-item`
 
 | Long Arg | Short Arg | Description | Required? | Type |
